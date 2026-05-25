@@ -1,4 +1,4 @@
-package bing
+package academic
 
 import (
 	"encoding/json"
@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"websearch/pkg/antirobot"
 )
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -18,17 +20,18 @@ type crossrefEngine struct {
 	client *http.Client
 }
 
-// NewCrossref 创建 Crossref 引擎。
-func NewCrossref(_ CrossrefOpts) Engine {
-	return &crossrefEngine{
-		client: &http.Client{Timeout: 15 * time.Second},
+// NewCrossref 创建 Crossref 引擎。client 为 nil 时使用默认客户端。
+func NewCrossref(_ antirobot.CrossrefOpts, client *http.Client) antirobot.Engine {
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
 	}
+	return &crossrefEngine{client: client}
 }
 
-func (e *crossrefEngine) Name() string         { return "crossref" }
-func (e *crossrefEngine) Region() NetworkRegion { return RegionChina }
+func (e *crossrefEngine) Name() string                    { return "crossref" }
+func (e *crossrefEngine) Region() antirobot.NetworkRegion { return antirobot.RegionChina }
 
-func (e *crossrefEngine) Search(query string, page int, timeRange TimeRange) (*SearchResponse, error) {
+func (e *crossrefEngine) Search(query string, page int, timeRange antirobot.TimeRange) (*antirobot.SearchResponse, error) {
 	offset := (page - 1) * 20
 	if offset < 0 {
 		offset = 0
@@ -38,7 +41,7 @@ func (e *crossrefEngine) Search(query string, page int, timeRange TimeRange) (*S
 		"query":  {query},
 		"offset": {fmt.Sprintf("%d", offset)},
 	}
-	if since := TimeRangeSince(timeRange); since != "" {
+	if since := antirobot.TimeRangeSince(timeRange); since != "" {
 		params.Set("from-pub-date", since)
 	}
 
@@ -104,13 +107,13 @@ type crossrefPublished struct {
 	DateParts [][]int `json:"date-parts"`
 }
 
-func (e *crossrefEngine) parse(data []byte) (*SearchResponse, error) {
+func (e *crossrefEngine) parse(data []byte) (*antirobot.SearchResponse, error) {
 	var resp crossrefResp
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, fmt.Errorf("crossref parse: %w", err)
 	}
 
-	results := make([]Result, 0, len(resp.Message.Items))
+	results := make([]antirobot.Result, 0, len(resp.Message.Items))
 	for _, item := range resp.Message.Items {
 		if item.Type == "component" {
 			continue
@@ -118,7 +121,7 @@ func (e *crossrefEngine) parse(data []byte) (*SearchResponse, error) {
 
 		title := ""
 		if len(item.Title) > 0 {
-			title = collapseSpace(strings.TrimSpace(item.Title[0]))
+			title = antirobot.CollapseSpace(strings.TrimSpace(item.Title[0]))
 		}
 		if title == "" {
 			continue
@@ -154,16 +157,16 @@ func (e *crossrefEngine) parse(data []byte) (*SearchResponse, error) {
 			}
 		}
 
-		abstract := collapseSpace(strings.TrimSpace(item.Abstract))
-		abstract = stripXMLTags(abstract)
+		abstract := antirobot.CollapseSpace(strings.TrimSpace(item.Abstract))
+		abstract = antirobot.StripXMLTags(abstract)
 
 		resultURL := item.URL
 		if resultURL == "" && item.DOI != "" {
 			resultURL = "https://doi.org/" + item.DOI
 		}
 
-		results = append(results, Result{
-			Type:        ResultPaper,
+		results = append(results, antirobot.Result{
+			Type:        antirobot.ResultPaper,
 			Title:       title,
 			URL:         resultURL,
 			Content:     abstract,
@@ -176,21 +179,5 @@ func (e *crossrefEngine) parse(data []byte) (*SearchResponse, error) {
 		})
 	}
 
-	return &SearchResponse{Engine: "crossref", Results: results}, nil
-}
-
-func stripXMLTags(s string) string {
-	var sb strings.Builder
-	inTag := false
-	for _, r := range s {
-		switch {
-		case r == '<':
-			inTag = true
-		case r == '>':
-			inTag = false
-		case !inTag:
-			sb.WriteRune(r)
-		}
-	}
-	return sb.String()
+	return &antirobot.SearchResponse{Engine: "crossref", Results: results}, nil
 }

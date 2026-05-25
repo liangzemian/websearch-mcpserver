@@ -1,4 +1,4 @@
-package bing
+package academic
 
 import (
 	"encoding/json"
@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"websearch/pkg/antirobot"
 )
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -19,18 +21,21 @@ type openalexEngine struct {
 	mailTo string
 }
 
-// NewOpenAlex 创建 OpenAlex 引擎。
-func NewOpenAlex(opts OpenAlexOpts) Engine {
+// NewOpenAlex 创建 OpenAlex 引擎。client 为 nil 时使用默认客户端。
+func NewOpenAlex(opts antirobot.OpenAlexOpts, client *http.Client) antirobot.Engine {
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
+	}
 	return &openalexEngine{
-		client: &http.Client{Timeout: 15 * time.Second},
+		client: client,
 		mailTo: opts.MailTo,
 	}
 }
 
-func (e *openalexEngine) Name() string         { return "openalex" }
-func (e *openalexEngine) Region() NetworkRegion { return RegionChina }
+func (e *openalexEngine) Name() string                    { return "openalex" }
+func (e *openalexEngine) Region() antirobot.NetworkRegion { return antirobot.RegionChina }
 
-func (e *openalexEngine) Search(query string, page int, timeRange TimeRange) (*SearchResponse, error) {
+func (e *openalexEngine) Search(query string, page int, timeRange antirobot.TimeRange) (*antirobot.SearchResponse, error) {
 	params := url.Values{
 		"search":   {query},
 		"page":     {fmt.Sprintf("%d", page)},
@@ -40,7 +45,7 @@ func (e *openalexEngine) Search(query string, page int, timeRange TimeRange) (*S
 	if e.mailTo != "" {
 		params.Set("mailto", e.mailTo)
 	}
-	if since := TimeRangeSince(timeRange); since != "" {
+	if since := antirobot.TimeRangeSince(timeRange); since != "" {
 		params.Set("filter", "from_publication_date:"+since)
 	}
 
@@ -106,13 +111,13 @@ type openalexConcept struct {
 	DisplayName string `json:"display_name"`
 }
 
-func (e *openalexEngine) parse(data []byte) (*SearchResponse, error) {
+func (e *openalexEngine) parse(data []byte) (*antirobot.SearchResponse, error) {
 	var resp openalexResp
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, fmt.Errorf("openalex parse: %w", err)
 	}
 
-	results := make([]Result, 0, len(resp.Results))
+	results := make([]antirobot.Result, 0, len(resp.Results))
 	for _, w := range resp.Results {
 		title := w.Title
 		if title == "" {
@@ -121,7 +126,7 @@ func (e *openalexEngine) parse(data []byte) (*SearchResponse, error) {
 		if title == "" {
 			continue
 		}
-		title = collapseSpace(strings.TrimSpace(title))
+		title = antirobot.CollapseSpace(strings.TrimSpace(title))
 
 		resultURL := ""
 		if w.PrimaryLocation != nil && w.PrimaryLocation.LandingPage != "" {
@@ -155,8 +160,8 @@ func (e *openalexEngine) parse(data []byte) (*SearchResponse, error) {
 
 		doi := strings.TrimPrefix(w.DOI, "https://doi.org/")
 
-		results = append(results, Result{
-			Type:        ResultPaper,
+		results = append(results, antirobot.Result{
+			Type:        antirobot.ResultPaper,
 			Title:       title,
 			URL:         resultURL,
 			Content:     abstract,
@@ -171,7 +176,7 @@ func (e *openalexEngine) parse(data []byte) (*SearchResponse, error) {
 		})
 	}
 
-	return &SearchResponse{Engine: "openalex", Results: results}, nil
+	return &antirobot.SearchResponse{Engine: "openalex", Results: results}, nil
 }
 
 func reconstructAbstract(invIdx map[string][]int) string {
@@ -194,5 +199,5 @@ func reconstructAbstract(invIdx map[string][]int) string {
 			}
 		}
 	}
-	return collapseSpace(strings.Join(words, " "))
+	return antirobot.CollapseSpace(strings.Join(words, " "))
 }

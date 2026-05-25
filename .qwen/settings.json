@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Read(C:\\Users\\panda\\.qwen\\websearch/**)"
+      "Read(C:\\Users\\panda\\.qwen\\websearch/**)",
+      "Bash(go *)"
     ]
-  }
+  },
+  "$version": 4
 }

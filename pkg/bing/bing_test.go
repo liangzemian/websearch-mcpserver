@@ -1,51 +1,60 @@
 package bing
 
 import (
-	"context"
-	"fmt"
+	"strings"
 	"testing"
-	"time"
+
+	"websearch/pkg/antirobot"
 )
 
 func TestBingSearch(t *testing.T) {
-	opts := DefaultOptions()
-	s := NewSearcher(opts)
+	engine := NewBing(BingOpts{Enabled: true})
+	resp, err := engine.Search("golang concurrency", 1, antirobot.TimeRangeNone)
+	if err != nil {
+		t.Fatalf("search error: %v", err)
+	}
+	if resp.Engine != "bing" {
+		t.Errorf("engine = %q, want bing", resp.Engine)
+	}
+	if len(resp.Results) == 0 {
+		t.Fatal("expected results, got 0")
+	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	r := resp.Results[0]
+	t.Logf("Title: %s", r.Title)
+	t.Logf("URL: %s", r.URL)
+	t.Logf("Content: %s", r.Content[:min(len(r.Content), 100)])
 
-	fmt.Printf("引擎: %v\n", s.Engines())
-	responses := s.Search(ctx, "golang concurrency", 1)
-
-	for _, resp := range responses {
-		fmt.Printf("\n[%s] error=%q results=%d\n", resp.Engine, resp.Error, len(resp.Results))
-		for i, r := range resp.Results {
-			if i >= 3 {
-				break
-			}
-			fmt.Printf("  %d. %s\n     %s\n", i+1, r.Title, r.URL)
-		}
+	if r.Type != antirobot.ResultWeb {
+		t.Errorf("type = %q, want web", r.Type)
+	}
+	if r.Title == "" {
+		t.Error("title is empty")
+	}
+	if !strings.HasPrefix(r.URL, "http") {
+		t.Errorf("url = %q, should be a valid URL", r.URL)
+	}
+	if r.DOI != "" {
+		t.Errorf("web result should not have DOI, got %q", r.DOI)
+	}
+	if r.Journal != "" {
+		t.Errorf("web result should not have journal, got %q", r.Journal)
 	}
 }
 
-func TestAcademicSearch(t *testing.T) {
-	opts := AcademicOptions()
-	opts.Strategy = StrategyParallel
-	s := NewSearcher(opts)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	fmt.Printf("引擎: %v\n", s.Engines())
-	responses := s.Search(ctx, "transformer attention mechanism", 1)
-
-	for _, resp := range responses {
-		fmt.Printf("\n[%s] error=%q results=%d\n", resp.Engine, resp.Error, len(resp.Results))
-		for i, r := range resp.Results {
-			if i >= 2 {
-				break
-			}
-			fmt.Printf("  %d. [%s] %s\n     %s\n", i+1, r.Type, r.Title, r.URL)
+func TestMergeBlocked(t *testing.T) {
+	merged := MergeBlocked(
+		[]string{"example.com", "test.org"},
+		[]string{"test.org", "blocked.net"},
+	)
+	seen := make(map[string]bool)
+	for _, d := range merged {
+		if seen[d] {
+			t.Errorf("duplicate domain: %s", d)
 		}
+		seen[d] = true
+	}
+	if len(merged) != 3 {
+		t.Errorf("expected 3 unique domains, got %d: %v", len(merged), merged)
 	}
 }

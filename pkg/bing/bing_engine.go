@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"websearch/pkg/antirobot"
+
 	"github.com/PuerkitoBio/goquery"
 )
 
@@ -23,7 +25,7 @@ import (
 
 type bingEngine struct {
 	opts    BingOpts
-	limiter *RateLimiter
+	limiter *antirobot.RateLimiter
 
 	mu          sync.Mutex
 	client      *http.Client
@@ -50,7 +52,6 @@ var bingLangVariants = []string{
 	"zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
-var bingCountRe = regexp.MustCompile(`[^0-9]`)
 var bingSafesearchMap = map[int]string{0: "off", 1: "moderate", 2: "strict"}
 
 const (
@@ -61,29 +62,12 @@ const (
 	bingBlockThreshold  = 5
 )
 
-// NewBing 创建 Bing 引擎。
-func NewBing(opts BingOpts) Engine {
-	perSec, perMin := opts.PerSec, opts.PerMin
-	if perSec <= 0 {
-		perSec = 1
-	}
-	if perMin <= 0 {
-		perMin = 20
-	}
-	e := &bingEngine{
-		opts:    opts,
-		limiter: NewRateLimiter(perSec, perMin),
-	}
-	e.rotateSession()
-	return e
-}
+func (e *bingEngine) Name() string                  { return "bing" }
+func (e *bingEngine) Region() antirobot.NetworkRegion { return antirobot.RegionChina }
 
-func (e *bingEngine) Name() string         { return "bing" }
-func (e *bingEngine) Region() NetworkRegion { return RegionChina }
-
-func (e *bingEngine) Search(query string, page int, timeRange TimeRange) (*SearchResponse, error) {
+func (e *bingEngine) Search(query string, page int, timeRange antirobot.TimeRange) (*antirobot.SearchResponse, error) {
 	if !e.limiter.Allow() {
-		return &SearchResponse{Engine: "bing", Results: []Result{}}, nil
+		return &antirobot.SearchResponse{Engine: "bing", Results: []antirobot.Result{}}, nil
 	}
 
 	e.preDelay()
@@ -137,7 +121,7 @@ func (e *bingEngine) Search(query string, page int, timeRange TimeRange) (*Searc
 		e.rotateSession()
 	}
 
-	return &SearchResponse{Engine: "bing", Results: results}, nil
+	return &antirobot.SearchResponse{Engine: "bing", Results: results}, nil
 }
 
 // ── 反爬防御 ──
@@ -198,7 +182,7 @@ func (e *bingEngine) recordFail() {
 
 // ── URL 构造 ──
 
-func (e *bingEngine) buildURL(query string, page int, timeRange TimeRange) string {
+func (e *bingEngine) buildURL(query string, page int, timeRange antirobot.TimeRange) string {
 	q := url.Values{}
 	q.Set("q", e.applyBlocked(query))
 	q.Set("adlt", bingSafesearchMap[e.opts.SafeSearch])
@@ -211,15 +195,15 @@ func (e *bingEngine) buildURL(query string, page int, timeRange TimeRange) strin
 	return "https://www.bing.com/search?" + q.Encode()
 }
 
-func bingTimeRangeCode(tr TimeRange) string {
+func bingTimeRangeCode(tr antirobot.TimeRange) string {
 	switch tr {
-	case TimeRangeDay:
+	case antirobot.TimeRangeDay:
 		return "14745"
-	case TimeRangeWeek:
+	case antirobot.TimeRangeWeek:
 		return "14747"
-	case TimeRangeMonth:
+	case antirobot.TimeRangeMonth:
 		return "14748"
-	case TimeRangeYear:
+	case antirobot.TimeRangeYear:
 		return "14749"
 	default:
 		return ""
@@ -241,12 +225,12 @@ func (e *bingEngine) applyBlocked(query string) string {
 
 // ── HTML 解析 ──
 
-func (e *bingEngine) parseResults(htmlText string) []Result {
+func (e *bingEngine) parseResults(htmlText string) []antirobot.Result {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlText))
 	if err != nil {
 		return nil
 	}
-	var results []Result
+	var results []antirobot.Result
 	doc.Find("ol#b_results li.b_algo").Each(func(_ int, sel *goquery.Selection) {
 		link := sel.Find("h2 a").First()
 		if link.Length() == 0 {
@@ -261,15 +245,15 @@ func (e *bingEngine) parseResults(htmlText string) []Result {
 
 		contentSel := sel.Find("p")
 		contentSel.Find("span.algoSlug_icon").Remove()
-		content := collapseSpace(strings.TrimSpace(contentSel.Text()))
+		content := antirobot.CollapseSpace(strings.TrimSpace(contentSel.Text()))
 
 		date := ""
 		if ds := sel.Find("span.news_dt, span.ftrP").First(); ds.Length() > 0 {
 			date = strings.TrimSpace(ds.Text())
 		}
 
-		results = append(results, Result{
-			Type: ResultWeb, Title: title, URL: href,
+		results = append(results, antirobot.Result{
+			Type: antirobot.ResultWeb, Title: title, URL: href,
 			Content: content, PublishedAt: date, Engine: "bing",
 		})
 	})
@@ -278,12 +262,12 @@ func (e *bingEngine) parseResults(htmlText string) []Result {
 
 // ── 站点屏蔽 ──
 
-func (e *bingEngine) filterBlocked(results []Result) []Result {
+func (e *bingEngine) filterBlocked(results []antirobot.Result) []antirobot.Result {
 	blocked := make(map[string]struct{}, len(e.opts.Blocked))
 	for _, d := range e.opts.Blocked {
 		blocked[strings.ToLower(d)] = struct{}{}
 	}
-	filtered := make([]Result, 0, len(results))
+	filtered := make([]antirobot.Result, 0, len(results))
 	for _, r := range results {
 		host := extractHost(r.URL)
 		hit := false
@@ -337,9 +321,31 @@ func extractHost(rawURL string) string {
 	return strings.TrimPrefix(host, "www.")
 }
 
-func collapseSpace(s string) string {
-	s = strings.ReplaceAll(s, "\n", " ")
-	s = strings.ReplaceAll(s, "\r", " ")
-	s = strings.ReplaceAll(s, "\t", " ")
-	return strings.Join(strings.Fields(s), " ")
+// MergeBlocked 合并 black_list_host 和 bing.blocked，去重。
+func MergeBlocked(blackListHost, bingBlocked []string) []string {
+	seen := make(map[string]struct{})
+	var merged []string
+	for _, d := range blackListHost {
+		d = strings.ToLower(strings.TrimSpace(d))
+		if d == "" {
+			continue
+		}
+		if _, exists := seen[d]; !exists {
+			seen[d] = struct{}{}
+			merged = append(merged, d)
+		}
+	}
+	for _, d := range bingBlocked {
+		d = strings.ToLower(strings.TrimSpace(d))
+		if d == "" {
+			continue
+		}
+		if _, exists := seen[d]; !exists {
+			seen[d] = struct{}{}
+			merged = append(merged, d)
+		}
+	}
+	return merged
 }
+
+var bingCountRe = regexp.MustCompile(`[^0-9]`)

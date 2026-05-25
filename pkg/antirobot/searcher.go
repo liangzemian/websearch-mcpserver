@@ -1,4 +1,4 @@
-package bing
+package antirobot
 
 import (
 	"context"
@@ -7,43 +7,38 @@ import (
 	"time"
 )
 
+// ── 搜索策略 ──
+
+// Strategy 多引擎检索策略。
+type Strategy int
+
+const (
+	// StrategyParallel 并行：同时请求所有引擎，汇总全部结果。
+	StrategyParallel Strategy = iota
+	// StrategySerial 串行：依次请求引擎，首个返回有效结果即停止。
+	StrategySerial
+)
+
+// ── Searcher 编排器 ──
+
 // Searcher 多引擎搜索编排器，支持并行和串行两种策略。
 type Searcher struct {
-	opts    Options
+	Strategy         Strategy
+	MaxResults       int
+	TimeRange        TimeRange
+	Concurrency      int
+	PerEngineTimeout time.Duration
+
 	engines []Engine
 }
 
-// NewSearcher 根据 Options 创建 Searcher，自动注册已启用且网络可达的引擎。
-func NewSearcher(opts Options) *Searcher {
-	s := &Searcher{opts: opts}
-	s.buildEngines()
-	return s
-}
-
-func (s *Searcher) buildEngines() {
-	if !s.opts.Academic {
-		if s.opts.Bing.Enabled {
-			s.engines = append(s.engines, NewBing(s.opts.Bing))
-		}
-		return
-	}
-
-	// 学术模式：优先学术引擎，Bing 仅作补充
-	if s.opts.Crossref.Enabled && s.opts.Network >= RegionChina {
-		s.engines = append(s.engines, NewCrossref(s.opts.Crossref))
-	}
-	if s.opts.OpenAlex.Enabled && s.opts.Network >= RegionChina {
-		s.engines = append(s.engines, NewOpenAlex(s.opts.OpenAlex))
-	}
-	if s.opts.Arxiv.Enabled && s.opts.Network >= RegionInternational {
-		s.engines = append(s.engines, NewArxiv(s.opts.Arxiv))
-	}
-	if s.opts.SemanticScholar.Enabled && s.opts.Network >= RegionInternational {
-		s.engines = append(s.engines, NewSemanticScholar(s.opts.SemanticScholar))
-	}
-	// Bing 放在最后，学术引擎无结果时才启用
-	if s.opts.Bing.Enabled && s.opts.BingFallback {
-		s.engines = append(s.engines, NewBing(s.opts.Bing))
+// NewSearcher 创建 Searcher。
+func NewSearcher(strategy Strategy, engines []Engine) *Searcher {
+	return &Searcher{
+		Strategy:         strategy,
+		Concurrency:      5,
+		PerEngineTimeout: 10 * time.Second,
+		engines:          engines,
 	}
 }
 
@@ -52,7 +47,7 @@ func (s *Searcher) Search(ctx context.Context, query string, page int) []SearchR
 	if len(s.engines) == 0 {
 		return nil
 	}
-	switch s.opts.Strategy {
+	switch s.Strategy {
 	case StrategySerial:
 		return s.searchSerial(ctx, query, page)
 	default:
@@ -75,7 +70,7 @@ func (s *Searcher) searchParallel(ctx context.Context, query string, page int) [
 	n := len(s.engines)
 	results := make([]SearchResponse, n)
 
-	concurrency := s.opts.Concurrency
+	concurrency := s.Concurrency
 	if concurrency <= 0 {
 		concurrency = 5
 	}
@@ -116,8 +111,8 @@ func (s *Searcher) searchSerial(ctx context.Context, query string, page int) []S
 }
 
 func (s *Searcher) truncateResults(results []Result) []Result {
-	if s.opts.MaxResults > 0 && len(results) > s.opts.MaxResults {
-		return results[:s.opts.MaxResults]
+	if s.MaxResults > 0 && len(results) > s.MaxResults {
+		return results[:s.MaxResults]
 	}
 	return results
 }
@@ -125,7 +120,7 @@ func (s *Searcher) truncateResults(results []Result) []Result {
 // ── 通用执行 ──
 
 func (s *Searcher) execOne(parent context.Context, eng Engine, query string, page int) SearchResponse {
-	timeout := s.opts.PerEngineTimeout
+	timeout := s.PerEngineTimeout
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
@@ -138,7 +133,7 @@ func (s *Searcher) execOne(parent context.Context, eng Engine, query string, pag
 	}
 	ch := make(chan outcome, 1)
 	go func() {
-		resp, err := eng.Search(query, page, s.opts.TimeRange)
+		resp, err := eng.Search(query, page, s.TimeRange)
 		ch <- outcome{resp, err}
 	}()
 

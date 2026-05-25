@@ -17,6 +17,7 @@ import (
 	"websearch/pkg/config"
 	"websearch/pkg/daemon"
 	"websearch/pkg/log"
+	"websearch/pkg/search"
 	"websearch/searxng"
 )
 
@@ -113,6 +114,15 @@ func (s *Server) registerAdminHandlers(mux *http.ServeMux) {
 		default:
 		}
 	}))
+
+	mux.HandleFunc("/__admin/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(daemon.RefCountResponse{
+			RefCount: int(s.refCount.Load()),
+			Message:  "running",
+		})
+	})
 }
 
 // Run 启动 HTTP 服务并阻塞直到收到关闭信号或引用计数归零。
@@ -126,7 +136,8 @@ func (s *Server) Run(conf config.Config) {
 	); err != nil {
 		panic(err)
 	}
-	searxng.Init(conf)
+	searchGroup, _ := search.NewFromConfig(conf)
+	searxng.Init(searchGroup)
 	mux := http.NewServeMux()
 	mcpserver.RegisterRouter(mux, conf)
 	searxng.RegisterRouter(mux)
@@ -203,7 +214,8 @@ func (s *Server) Handler(conf config.Config) http.Handler {
 	); err != nil {
 		panic(err)
 	}
-	searxng.Init(conf)
+	searchGroup, _ := search.NewFromConfig(conf)
+	searxng.Init(searchGroup)
 	mux := http.NewServeMux()
 	mcpserver.RegisterRouter(mux, conf)
 	searxng.RegisterRouter(mux)

@@ -10,13 +10,6 @@ port: 8338
 # 日志级别: debug / info / warn / error（默认 info）
 log_level: info
 
-# 日志文件滚动配置（可选）
-log:
-  # 单个日志文件最大大小（MB），默认 1
-  max_size: 1
-  # 日志保留天数，默认 1
-  max_age: 1
-
 # 搜索模式:
 #   - baidu   : 仅使用百度千帆 AI Search API（默认）
 #   - tavily  : 仅使用 Tavily Search API
@@ -24,15 +17,10 @@ log:
 #   - engine  : 纯引擎模式，无需 API Key，使用 Bing + 学术搜索引擎
 mode: engine
 
-# 百度千帆 AI Search API 密钥（engine 模式下不需要）
-# 获取地址: https://console.bce.baidu.com/iam/#/iam/apikey/list
-baidu_sk: YOUR-BAIDU-SK
+# 网络环境: china（默认，自动跳过海外引擎） / international（启用全部引擎）
+network: china
 
-# Tavily Search API 密钥（engine 模式下不需要）
-# 获取地址: https://app.tavily.com/home
-tavily_sk: YOUR-TAVILY-SK
-
-# 屏蔽站点列表（仅对百度模式有效）
+# 屏蔽站点列表（对所有搜索引擎生效）
 black_list_host:
   - "baijiahao.baidu.com"
   - "csdn.net"
@@ -44,54 +32,66 @@ black_list_host:
   - "sina.com.cn"
 
 # ==============================================
-# Bing 引擎配置（兜底引擎 + engine 模式主力引擎）
-# 默认所有引擎开启，无需 API Key
-# 通过 disable_* 字段可单独关闭特定引擎
+# 百度千帆 AI Search API（mode=baidu 或 hybrid 时需要）
+# 获取地址: https://console.bce.baidu.com/iam/#/iam/apikey/list
+# 环境变量: BAIDU_SK
+# ==============================================
+baidu:
+  api_key: ""
+
+# ==============================================
+# Tavily Search API（mode=tavily 或 hybrid 时需要）
+# 获取地址: https://app.tavily.com/home
+# 环境变量: TAVILY_SK
+# ==============================================
+tavily:
+  api_key: ""
+
+# ==============================================
+# Bing 通用搜索引擎（兜底引擎 + engine 模式主力引擎）
+# 无需 API Key，默认开启
 # ==============================================
 bing:
-  # 总开关（默认 true）
   enabled: true
-  # 学术引擎总开关（默认 true，开启后可用学术论文搜索引擎）
-  academic: true
-  # 学术搜索时是否用 Bing 兜底（默认 true，设为 false 则仅返回学术引擎结果）
-  bing_fallback: true
-  # 网络环境: china（默认，自动跳过海外引擎） / international（启用全部引擎）
-  network: china
-  # Bing 屏蔽域名
-  blocked: []
-  # Bing 每秒限流（默认 1）
-  per_sec: 1
-  # Bing 每分钟限流（默认 20）
-  per_min: 20
+  blocked: []              # Bing 专用屏蔽域名（与 black_list_host 合并）
+  per_sec: 1               # 每秒限流（默认 1）
+  per_min: 20              # 每分钟限流（默认 20）
 
-  # ── 各引擎独立禁用开关（默认 false = 启用，设为 true 关闭） ──
-  # 禁用 arXiv 预印本搜索引擎
+# ==============================================
+# 学术搜索引擎（无需 API Key）
+# ==============================================
+academic:
+  enabled: true            # 学术引擎总开关（默认 true）
+  bing_fallback: true      # 学术搜索时用 Bing 兜底（默认 true）
+  # 各引擎独立禁用（默认 false = 启用）
   disable_arxiv: false
-  # 禁用 Crossref 学术元数据引擎
   disable_crossref: false
-  # 禁用 OpenAlex 开放学术图谱引擎
   disable_openalex: false
-  # 禁用 Semantic Scholar（仅 international 网络下可用）
   disable_semantic_scholar: false
+  disable_pubmed: false
+  disable_google_scholar: false
+
+# ==============================================
+# 代理配置（仅用于海外学术引擎：Semantic Scholar、Google Scholar）
+# ==============================================
+proxy:
+  enabled: false                    # 是否启用（默认 false，启用后才会初始化海外引擎）
+  endpoint: "http://127.0.0.1:7897" # 代理端点（默认 7897）
 
 # ==============================================
 # LLM 配置（可选，用于搜索摘要生成）
+# 环境变量: LLM_BASE_URL, LLM_API_KEY
 # ==============================================
 llm:
-  # LLM API 基础地址，支持 OpenAI 兼容格式
   base_url: "https://api.openai.com/v1"
-  # LLM API 密钥
   api_key: "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-  # 使用的模型 ID
   model_id: "gpt-4o-mini"
 
 # ==============================================
 # 缓存配置（可选）
 # ==============================================
 cache:
-  # SQLite 数据库文件存储路径（留空则禁用缓存）
   storage_path: "./data/search_cache.db"
-  # 过期数据清理间隔（分钟），默认 30，最大 360
   cleanup_interval: 30
 
 # ==============================================
@@ -99,22 +99,12 @@ cache:
 # 获取 API Key: https://jina.ai/reader/
 # ==============================================
 jina:
-  # Jina API 密钥（留空则不启用 cleanfetch 工具）
   api_key: ""
-  # API 基础地址（默认 https://r.jina.ai）
   base_url: ""
 
 # ==============================================
-# 环境变量覆盖说明
+# 日志文件滚动配置（可选）
 # ==============================================
-# 以下环境变量优先级高于配置文件:
-#   BAIDU_SK      -> 覆盖 baidu_sk
-#   TAVILY_SK     -> 覆盖 tavily_sk
-#   LLM_BASE_URL  -> 覆盖 llm.base_url
-#   LLM_API_KEY   -> 覆盖 llm.api_key
-#
-# 使用示例:
-#   Windows PowerShell:
-#     $env:BAIDU_SK="your-sk"; .\websearch-mcpserver.exe start
-#   Linux / macOS:
-#     BAIDU_SK=your-sk ./websearch-mcpserver start
+log:
+  max_size: 1  # 单个日志文件最大 MB（默认 1）
+  max_age: 1   # 保留天数（默认 1）

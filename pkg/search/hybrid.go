@@ -95,11 +95,7 @@ func (h *HybridSearchImpl) MergeContent(query string, results []SearchResult) (s
 	buf.Grow(1024 * len(results))
 	buf.WriteString(md.MDSearchHeader(query, len(results)))
 	for i, val := range results {
-		if val.Type == "paper" {
-			buf.WriteString(md.FormatPaperMD(i+1, val.Title, val.Url, val.Authors, val.DOI, val.Content))
-		} else {
-			buf.WriteString(md.FormatMD(i+1, val.Title, val.Url, val.Content))
-		}
+		buf.WriteString(md.FormatMD(i+1, val.Title, val.Url, val.Content))
 	}
 	return buf.String(), nil
 }

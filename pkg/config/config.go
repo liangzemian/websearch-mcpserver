@@ -19,24 +19,81 @@ const (
 	ModeEngine = "engine" // 纯引擎模式，无需 API Key
 )
 
-type LogConfig struct {
-	MaxSize int `mapstructure:"max_size"` // 单个日志文件最大大小（MB），默认 1
-	MaxAge  int `mapstructure:"max_age"`  // 日志保留天数，默认 1
-}
+// ── 顶层配置 ──
 
 type Config struct {
 	Port          int              `mapstructure:"port"`
 	LogLevel      string           `mapstructure:"log_level"`
 	Mode          string           `mapstructure:"mode"`
-	BlackListHost []string         `mapstructure:"black_list_host"`
-	BaiduSK       string           `mapstructure:"baidu_sk"`
-	TavilySk      string           `mapstructure:"tavily_sk"`
+	Network       string           `mapstructure:"network"`        // 全局网络区域: china / international
+	BlackListHost []string         `mapstructure:"black_list_host"` // 全局屏蔽站点
+	Baidu         BaiduConfig      `mapstructure:"baidu"`
+	Tavily        TavilyConfig     `mapstructure:"tavily"`
 	LLM           LLMConfig        `mapstructure:"llm"`
 	Jina          JinaConfig       `mapstructure:"jina"`
 	Cache         CacheConfig      `mapstructure:"cache"`
 	Log           LogConfig        `mapstructure:"log"`
-	Bing          BingEngineConfig `mapstructure:"bing"`
+	Bing          BingConfig       `mapstructure:"bing"`
+	Academic      AcademicConfig   `mapstructure:"academic"`
+	Proxy         ProxyConfig      `mapstructure:"proxy"`
 }
+
+// ── 各搜索引擎配置 ──
+
+type BaiduConfig struct {
+	APIKey string `mapstructure:"api_key"` // 百度千帆 AI Search API Key
+}
+
+type TavilyConfig struct {
+	APIKey string `mapstructure:"api_key"` // Tavily Search API Key
+}
+
+type BingConfig struct {
+	Enabled bool     `mapstructure:"enabled"` // 总开关（默认 true）
+	Blocked []string `mapstructure:"blocked"` // Bing 屏蔽域名
+	PerSec  int      `mapstructure:"per_sec"` // 每秒限流（默认 1）
+	PerMin  int      `mapstructure:"per_min"` // 每分钟限流（默认 20）
+}
+
+// ── 学术引擎配置 ──
+
+type AcademicConfig struct {
+	Enabled      bool `mapstructure:"enabled"`       // 学术引擎总开关（默认 true）
+	BingFallback bool `mapstructure:"bing_fallback"` // 学术搜索时用 Bing 兜底（默认 true）
+
+	// 各引擎独立禁用（默认 false = 启用）
+	DisableArxiv           bool `mapstructure:"disable_arxiv"`
+	DisableCrossref        bool `mapstructure:"disable_crossref"`
+	DisableOpenAlex        bool `mapstructure:"disable_openalex"`
+	DisableSemanticScholar bool `mapstructure:"disable_semantic_scholar"`
+	DisablePubMed          bool `mapstructure:"disable_pubmed"`
+	DisableGoogleScholar   bool `mapstructure:"disable_google_scholar"`
+}
+
+// ── 工具开关 ──
+
+type ToolsConfig struct {
+	Smartsearch     bool `mapstructure:"smartsearch"`     // smartsearch 工具（默认 true）
+	Academicsearch  bool `mapstructure:"academicsearch"`  // academicsearch 工具（默认 true）
+	Cleanfetch      bool `mapstructure:"cleanfetch"`      // cleanfetch 工具（默认 true，需 jina 配置）
+}
+
+// ── 代理配置 ──
+
+type ProxyConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`  // 是否启用代理（默认 false）
+	Endpoint string `mapstructure:"endpoint"` // 代理地址（默认 http://127.0.0.1:7897）
+}
+
+// GetProxyEndpoint 返回代理端点地址，未配置时返回默认值。
+func (c ProxyConfig) GetProxyEndpoint() string {
+	if c.Endpoint != "" {
+		return c.Endpoint
+	}
+	return "http://127.0.0.1:7897"
+}
+
+// ── 其他子配置 ──
 
 type LLMConfig struct {
 	BaseURL string `mapstructure:"base_url"`
@@ -54,26 +111,15 @@ type JinaConfig struct {
 	BaseURL string `mapstructure:"base_url"` // 默认 https://r.jina.ai
 }
 
-// BingEngineConfig Bing 引擎配置。
-// 默认所有引擎开启，通过 disable_* 子字段单独关闭。
-type BingEngineConfig struct {
-	Enabled      bool     `mapstructure:"enabled"`        // 总开关（默认 true）
-	Academic     bool     `mapstructure:"academic"`       // 学术引擎总开关（默认 true）
-	BingFallback bool     `mapstructure:"bing_fallback"`  // 学术搜索时是否用 Bing 兜底（默认 true）
-	Network      string   `mapstructure:"network"`        // 网络区域: china / international（默认 china）
-	Blocked      []string `mapstructure:"blocked"`        // Bing 屏蔽域名
-	PerSec       int      `mapstructure:"per_sec"`        // Bing 每秒限流（默认 1）
-	PerMin       int      `mapstructure:"per_min"`        // Bing 每分钟限流（默认 20）
-
-	// 各引擎独立禁用开关（默认 false = 启用）
-	DisableArxiv           bool `mapstructure:"disable_arxiv"`
-	DisableCrossref        bool `mapstructure:"disable_crossref"`
-	DisableOpenAlex        bool `mapstructure:"disable_openalex"`
-	DisableSemanticScholar bool `mapstructure:"disable_semantic_scholar"`
+type LogConfig struct {
+	MaxSize int `mapstructure:"max_size"` // 单个日志文件最大大小（MB），默认 1
+	MaxAge  int `mapstructure:"max_age"`  // 日志保留天数，默认 1
 }
 
+// ── Config 方法 ──
+
 // IsInternational 返回是否为海外网络环境。
-func (c BingEngineConfig) IsInternational() bool {
+func (c Config) IsInternational() bool {
 	switch strings.ToLower(c.Network) {
 	case "international", "intl":
 		return true
@@ -126,6 +172,8 @@ func (c Config) NeedsAPIKey() bool {
 	}
 }
 
+// ── 配置加载 ──
+
 func Load(configPath string) (*Config, error) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -152,8 +200,8 @@ func Load(configPath string) (*Config, error) {
 
 	viper.SetEnvPrefix("APP")
 	viper.AutomaticEnv()
-	viper.BindEnv("baidu_sk", "BAIDU_SK")
-	viper.BindEnv("tavily_sk", "TAVILY_SK")
+	viper.BindEnv("baidu.api_key", "BAIDU_SK")
+	viper.BindEnv("tavily.api_key", "TAVILY_SK")
 	viper.BindEnv("llm.base_url", "LLM_BASE_URL")
 	viper.BindEnv("llm.api_key", "LLM_API_KEY")
 	var conf Config
@@ -161,7 +209,8 @@ func Load(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("配置解析失败,%w", err)
 	}
 
-	// 日志默认值
+	// ── 默认值 ──
+
 	if conf.Log.MaxSize <= 0 {
 		conf.Log.MaxSize = 1
 	}
@@ -169,22 +218,20 @@ func Load(configPath string) (*Config, error) {
 		conf.Log.MaxAge = 1
 	}
 
-	// Bing 引擎默认值：未显式配置 enabled 时默认 true
-	if viper.IsSet("bing.enabled") {
-		// 用户显式配置了，保留原值
-	} else {
+	// Bing 默认开启
+	if !viper.IsSet("bing.enabled") {
 		conf.Bing.Enabled = true
 	}
-	if viper.IsSet("bing.academic") {
-		// 用户显式配置了，保留原值
-	} else {
-		conf.Bing.Academic = true
+	// 学术引擎默认开启
+	if !viper.IsSet("academic.enabled") {
+		conf.Academic.Enabled = true
 	}
-	// bing_fallback 默认 true：学术搜索时用 Bing 兜底
-	if viper.IsSet("bing.bing_fallback") {
-		// 用户显式配置了，保留原值
-	} else {
-		conf.Bing.BingFallback = true
+	if !viper.IsSet("academic.bing_fallback") {
+		conf.Academic.BingFallback = true
+	}
+	// 网络区域默认 china
+	if conf.Network == "" {
+		conf.Network = "china"
 	}
 
 	return &conf, nil

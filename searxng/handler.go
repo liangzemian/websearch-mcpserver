@@ -1,11 +1,9 @@
 package searxng
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
-	"websearch/pkg/bing"
-	"websearch/pkg/config"
 	"websearch/pkg/log"
 	"websearch/pkg/search"
 )
@@ -32,123 +30,39 @@ func handlerSearch(w http.ResponseWriter, r *http.Request) {
 	responseJSON(w, query, slice2Any(ret))
 }
 
-func Init(conf config.Config) {
-	switch conf.GetMode() {
-	case config.ModeEngine:
-		// 纯引擎模式
-		if conf.Bing.Enabled {
-			defaultInf = buildBingAdapter(conf)
-		} else {
-			log.Error("engine 模式但 bing 引擎未启用")
-		}
-
-	case config.ModeTavily:
-		if conf.TavilySk == "" {
-			log.Error("mode=tavily 但未配置 tavily_sk，回退到 engine 模式")
-			if conf.Bing.Enabled {
-				defaultInf = buildBingAdapter(conf)
-			} else {
-				log.Error("无可用搜索引擎")
-			}
-		} else {
-			defaultInf = search.NewTavilySearch(conf.TavilySk, conf.BlackListHost)
-		}
-
-	case config.ModeHybrid:
-		var engines []search.SearchInf
-		if conf.BaiduSK != "" {
-			engines = append(engines, search.NewBaiduSeach(conf.BaiduSK, conf.BlackListHost))
-		}
-		if conf.TavilySk != "" {
-			engines = append(engines, search.NewTavilySearch(conf.TavilySk, conf.BlackListHost))
-		}
-		if len(engines) == 0 {
-			log.Error("mode=hybrid 但未配置任何 API Key，回退到 engine 模式")
-			if conf.Bing.Enabled {
-				defaultInf = buildBingAdapter(conf)
-			} else {
-				log.Error("无可用搜索引擎")
-			}
-		} else {
-			defaultInf = search.NewHybridSearch(engines...)
-		}
-
-	default: // baidu
-		if conf.BaiduSK == "" {
-			log.Error("mode=baidu 但未配置 baidu_sk，回退到 engine 模式")
-			if conf.Bing.Enabled {
-				defaultInf = buildBingAdapter(conf)
-			} else {
-				log.Error("无可用搜索引擎")
-			}
-		} else {
-			defaultInf = search.NewBaiduSeach(conf.BaiduSK, conf.BlackListHost)
-		}
+func Init(group *search.SearchGroup) {
+	if group.Primary != nil {
+		defaultInf = group.Primary
+	} else {
+		log.Error("无可用搜索引擎")
 	}
-}
-
-// buildBingAdapter 根据配置构建 Bing 引擎适配器。
-func buildBingAdapter(conf config.Config) *search.BingSearchAdapter {
-	bc := conf.Bing
-
-	regularOpts := bing.DefaultOptions()
-	// 合并 black_list_host 和 bing.blocked
-	blocked := mergeBlocked(conf.BlackListHost, bc.Blocked)
-	regularOpts.Bing.Blocked = blocked
-	if bc.PerSec > 0 {
-		regularOpts.Bing.PerSec = bc.PerSec
-	}
-	if bc.PerMin > 0 {
-		regularOpts.Bing.PerMin = bc.PerMin
-	}
-
-	academicOpts := regularOpts
-	if bc.Academic {
-		academicOpts.Academic = true
-		academicOpts.Arxiv.Enabled = !bc.DisableArxiv
-		academicOpts.Crossref.Enabled = !bc.DisableCrossref
-		academicOpts.OpenAlex.Enabled = !bc.DisableOpenAlex
-		academicOpts.SemanticScholar.Enabled = !bc.DisableSemanticScholar
-
-		if bc.IsInternational() {
-			academicOpts.Network = bing.RegionInternational
-		} else {
-			academicOpts.Network = bing.RegionChina
-		}
-	}
-
-	adapter := search.NewBingSearchAdapter(regularOpts, academicOpts)
-	log.Infof("SearXNG 后端使用 Bing 引擎: %v", strings.Join(adapter.Engines(), ", "))
-	return adapter
-}
-
-// mergeBlocked 合并 black_list_host 和 bing.blocked，去重。
-func mergeBlocked(blackListHost, bingBlocked []string) []string {
-	seen := make(map[string]struct{})
-	var merged []string
-	for _, d := range blackListHost {
-		d = strings.ToLower(strings.TrimSpace(d))
-		if d == "" {
-			continue
-		}
-		if _, exists := seen[d]; !exists {
-			seen[d] = struct{}{}
-			merged = append(merged, d)
-		}
-	}
-	for _, d := range bingBlocked {
-		d = strings.ToLower(strings.TrimSpace(d))
-		if d == "" {
-			continue
-		}
-		if _, exists := seen[d]; !exists {
-			seen[d] = struct{}{}
-			merged = append(merged, d)
-		}
-	}
-	return merged
 }
 
 func RegisterRouter(mux *http.ServeMux) {
 	mux.HandleFunc("GET /searxng/search", handlerSearch)
+}
+
+// responseJSON 输出 JSON 响应。
+func responseJSON(w http.ResponseWriter, query string, data []any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	resp := map[string]interface{}{
+		"query":             query,
+		"results":           data,
+		"number_of_results": len(data),
+	}
+	s, _ := json.Marshal(resp)
+	log.Debugf("raw msg : %s", s)
+	json.NewEncoder(w).Encode(resp)
+}
+
+// responseError 输出错误响应。
+func responseError(w http.ResponseWriter, code int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusInternalServerError)
+	resp := map[string]interface{}{
+		"code": code,
+		"msg":  msg,
+	}
+	json.NewEncoder(w).Encode(resp)
 }

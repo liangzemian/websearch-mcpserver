@@ -1,4 +1,4 @@
-package bing
+package academic
 
 import (
 	"encoding/json"
@@ -6,10 +6,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
-	"sync"
 	"time"
+
+	"websearch/pkg/antirobot"
 )
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -20,17 +20,18 @@ type semanticScholarEngine struct {
 	client *http.Client
 }
 
-// NewSemanticScholar 创建 Semantic Scholar 引擎。
-func NewSemanticScholar(_ SemanticScholarOpts) Engine {
-	return &semanticScholarEngine{
-		client: &http.Client{Timeout: 15 * time.Second},
+// NewSemanticScholar 创建 Semantic Scholar 引擎。client 为 nil 时使用默认客户端。
+func NewSemanticScholar(_ antirobot.SemanticScholarOpts, client *http.Client) antirobot.Engine {
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
 	}
+	return &semanticScholarEngine{client: client}
 }
 
-func (e *semanticScholarEngine) Name() string         { return "semantic_scholar" }
-func (e *semanticScholarEngine) Region() NetworkRegion { return RegionInternational }
+func (e *semanticScholarEngine) Name() string                    { return "semantic_scholar" }
+func (e *semanticScholarEngine) Region() antirobot.NetworkRegion { return antirobot.RegionInternational }
 
-func (e *semanticScholarEngine) Search(query string, page int, timeRange TimeRange) (*SearchResponse, error) {
+func (e *semanticScholarEngine) Search(query string, page int, timeRange antirobot.TimeRange) (*antirobot.SearchResponse, error) {
 	offset := (page - 1) * 10
 	if offset < 0 {
 		offset = 0
@@ -42,7 +43,7 @@ func (e *semanticScholarEngine) Search(query string, page int, timeRange TimeRan
 		"limit":  {"10"},
 		"fields": {"title,url,abstract,authors,year,externalIds,venue,citationCount,openAccessPdf,relevanceScore"},
 	}
-	if since := TimeRangeSince(timeRange); since != "" {
+	if since := antirobot.TimeRangeSince(timeRange); since != "" {
 		year := since[:4]
 		params.Set("year", year+"-")
 	}
@@ -81,17 +82,17 @@ type ssResponse struct {
 }
 
 type ssPaper struct {
-	PaperID         string     `json:"paperId"`
-	Title           string     `json:"title"`
-	URL             string     `json:"url"`
-	Abstract        string     `json:"abstract"`
-	Year            int        `json:"year"`
-	Venue           string     `json:"venue"`
-	CitationCount   int        `json:"citationCount"`
-	RelevanceScore  float64    `json:"relevanceScore"`
-	Authors         []ssAuthor `json:"authors"`
-	ExternalIDs     ssExtIDs   `json:"externalIds"`
-	OpenAccess      *ssOA      `json:"openAccessPdf"`
+	PaperID        string     `json:"paperId"`
+	Title          string     `json:"title"`
+	URL            string     `json:"url"`
+	Abstract       string     `json:"abstract"`
+	Year           int        `json:"year"`
+	Venue          string     `json:"venue"`
+	CitationCount  int        `json:"citationCount"`
+	RelevanceScore float64    `json:"relevanceScore"`
+	Authors        []ssAuthor `json:"authors"`
+	ExternalIDs    ssExtIDs   `json:"externalIds"`
+	OpenAccess     *ssOA      `json:"openAccessPdf"`
 }
 
 type ssAuthor struct {
@@ -107,34 +108,13 @@ type ssOA struct {
 	URL string `json:"url"`
 }
 
-var ssVersionCache struct {
-	sync.Once
-	version string
-}
-
-func (e *semanticScholarEngine) fetchVersion() string {
-	ssVersionCache.Do(func() {
-		resp, err := e.client.Get("https://www.semanticscholar.org")
-		if err != nil {
-			return
-		}
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-		re := regexp.MustCompile(`<meta\s+name="s2-ui-version"\s+content="([^"]+)"`)
-		if m := re.FindSubmatch(body); len(m) > 1 {
-			ssVersionCache.version = string(m[1])
-		}
-	})
-	return ssVersionCache.version
-}
-
-func (e *semanticScholarEngine) parse(data []byte) (*SearchResponse, error) {
+func (e *semanticScholarEngine) parse(data []byte) (*antirobot.SearchResponse, error) {
 	var resp ssResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, fmt.Errorf("semantic scholar parse: %w", err)
 	}
 
-	results := make([]Result, 0, len(resp.Data))
+	results := make([]antirobot.Result, 0, len(resp.Data))
 	for _, p := range resp.Data {
 		if p.Title == "" {
 			continue
@@ -162,11 +142,11 @@ func (e *semanticScholarEngine) parse(data []byte) (*SearchResponse, error) {
 			pubDate = fmt.Sprintf("%d", p.Year)
 		}
 
-		title := collapseSpace(strings.TrimSpace(p.Title))
-		abstract := collapseSpace(strings.TrimSpace(p.Abstract))
+		title := antirobot.CollapseSpace(strings.TrimSpace(p.Title))
+		abstract := antirobot.CollapseSpace(strings.TrimSpace(p.Abstract))
 
-		results = append(results, Result{
-			Type:        ResultPaper,
+		results = append(results, antirobot.Result{
+			Type:        antirobot.ResultPaper,
 			Title:       title,
 			URL:         resultURL,
 			Content:     abstract,
@@ -181,5 +161,5 @@ func (e *semanticScholarEngine) parse(data []byte) (*SearchResponse, error) {
 		})
 	}
 
-	return &SearchResponse{Engine: "semantic_scholar", Results: results}, nil
+	return &antirobot.SearchResponse{Engine: "semantic_scholar", Results: results}, nil
 }

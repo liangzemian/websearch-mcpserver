@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(C:\\Users\\panda\\.qwen\\websearch/**)"
+    ]
+  },
+  "$version": 4
+}

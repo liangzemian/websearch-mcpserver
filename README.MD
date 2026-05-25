@@ -3,7 +3,7 @@
 ## 简介
 websearch mcp server 一个 golang 开发的轻量级 web search 服务，支持 baidu、tavily、hybrid（混合）以及 engine（纯引擎）模式。
 
-内置 Bing 通用搜索引擎作为兜底，并集成 arXiv、Crossref、OpenAlex、Semantic Scholar 等学术搜索引擎，支持学术论文检索。
+内置 Bing 通用搜索引擎作为兜底，并集成 arXiv、Crossref、OpenAlex、Semantic Scholar、PubMed、Google Scholar 等学术搜索引擎，支持学术论文检索。
 
 可作为独立 CLI 部署，也可作为 Go 模块嵌入到其他项目中。详见 [API 文档](./docs/api.md)。
 
@@ -38,22 +38,33 @@ Get-FileHash websearch-mcpserver-windows-amd64.exe -Algorithm SHA256
 | 引擎 | 类型 | 网络 | API Key | 说明 |
 |------|------|------|---------|------|
 | Bing | 通用搜索 | 🇨🇳 国内 | 否 | 内置反爬防御，作为兜底引擎 |
-| arXiv | 预印本 | 🇨🇳 国内 | 否 | AI/ML 论文主阵地 |
+| arXiv | 预印本 | 🇨🇳 国内 | 否 | CS/物理/数学论文主阵地 |
 | Crossref | 学术元数据 | 🇨🇳 国内 | 否 | DOI 注册机构，覆盖全学科 |
-| OpenAlex | 开放学术图谱 | 🇨🇳 国内 | 否 | 可选 polite pool 邮箱 |
-| Semantic Scholar | AI 学术搜索 | 🌍 海外 | 否 | AI 驱动，引用数据丰富 |
+| OpenAlex | 开放学术图谱 | 🇨🇳 国内 | 否 | 可选 polite pool 邮箱，含引用数 |
+| PubMed | 生物医学文献 | 🇨🇳 国内 | 否 | 医学/生命科学领域权威数据库 |
+| Semantic Scholar | AI 学术搜索 | 🌍 海外 | 否 | AI 驱动，引用数据丰富（需代理） |
+| Google Scholar | 全学科学术搜索 | 🌍 海外 | 否 | 覆盖最广，含引用数/PDF（需代理） |
 
-学术引擎通过以下方式触发：
-- MCP 工具的 `academic` 参数设为 `true`
-- 查询或意图中包含学术相关关键词（论文、paper、research、arxiv 等）时自动触发
+> **代理说明**：Semantic Scholar 和 Google Scholar 在国内网络下不可达，需配置代理后才会启用。arXiv、Crossref、OpenAlex、PubMed 国内可直连，无需代理。
 
 ## MCP 工具
 
 ### smartsearch
-网络检索工具，支持以下参数：
+通用网络检索工具，搜索互联网获取最新信息。支持以下参数：
 - `query`：搜索关键词
-- `intent`：搜索意图（LLM 摘要启用时可用）
-- `academic`：是否启用学术搜索引擎（默认 false）
+- `intent`：搜索意图（LLM 摘要启用时可用，提供意图可获得更精准的结构化摘要）
+
+### academicsearch
+学术论文检索工具，从多个学术数据库并行搜索论文，返回标准化的 Markdown 格式结果（含标题、作者、DOI、期刊、引用数、PDF 链接）。支持以下参数：
+- `query`：学术搜索关键词
+- `engines`：指定引擎子集（多选，为空则全部使用）。可选值：`arxiv`、`crossref`、`openalex`、`semantic_scholar`、`pubmed`、`google_scholar`
+- `time_range`：时间范围过滤。可选值：`year`（近一年）、`month`（近一月）、`week`（近一周）、`day`（近一天）
+- `page`：结果页码（默认 1）
+
+引擎选择建议：
+- 医学/生物 → `pubmed`
+- CS/AI → `arxiv`, `semantic_scholar`
+- 全学科 → `crossref`, `openalex`, `google_scholar`
 
 ### cleanfetch
 网页内容抓取工具，通过 Jina Reader API 获取干净的 Markdown 内容。
@@ -68,30 +79,45 @@ port: 8338  # mcp server 端口
 # 搜索模式: baidu / tavily / hybrid / engine
 mode: engine
 
-# 百度 api sk（engine 模式下不需要）
-baidu_sk: YOUR-BAIDU-SK
-# tavily api key（engine 模式下不需要）
-tavily_sk: YOUR-TAVILY-SK
+# 网络环境: china（默认） / international
+network: china
 
 # 屏蔽站点（对所有搜索引擎生效）
 black_list_host:
   - "csdn.net"
   - "zhihu.com"
 
+# 百度 API（mode=baidu 或 hybrid 时需要，环境变量: BAIDU_SK）
+baidu:
+  api_key: ""
+
+# Tavily API（mode=tavily 或 hybrid 时需要，环境变量: TAVILY_SK）
+tavily:
+  api_key: ""
+
 # Bing 引擎配置（兜底引擎 + engine 模式主力引擎，无需 API Key）
 bing:
   enabled: true            # 总开关（默认 true）
-  academic: true           # 学术引擎总开关（默认 true）
-  bing_fallback: true      # 学术搜索时是否用 Bing 兜底（默认 true，设为 false 仅返回学术引擎结果）
-  network: china           # 网络环境: china / international
   blocked: []              # Bing 专用屏蔽域名（与 black_list_host 合并）
-  per_sec: 1               # Bing 每秒限流
-  per_min: 20              # Bing 每分钟限流
+  per_sec: 1               # 每秒限流
+  per_min: 20              # 每分钟限流
+
+# 学术引擎配置（无需 API Key）
+academic:
+  enabled: true            # 总开关（默认 true，开启后注册 academicsearch 工具）
+  bing_fallback: true      # 学术搜索时用 Bing 兜底（默认 true）
   # 各引擎独立禁用（默认 false = 启用）
   disable_arxiv: false
   disable_crossref: false
   disable_openalex: false
   disable_semantic_scholar: false
+  disable_pubmed: false
+  disable_google_scholar: false
+
+# 代理配置（仅用于海外学术引擎）
+proxy:
+  enabled: false                    # 默认 false，启用后才会初始化海外引擎
+  endpoint: "http://127.0.0.1:7897" # 默认 7897
 
 # LLM 配置（可选，用于摘要生成）
 llm:
@@ -116,8 +142,8 @@ log:
 ```
 
 > 所有配置均支持环境变量覆盖：
-> - `BAIDU_SK` - 覆盖 `baidu_sk`
-> - `TAVILY_SK` - 覆盖 `tavily_sk`
+> - `BAIDU_SK` - 覆盖 `baidu.api_key`
+> - `TAVILY_SK` - 覆盖 `tavily.api_key`
 > - `LLM_BASE_URL` - 覆盖 `llm.base_url`
 > - `LLM_API_KEY` - 覆盖 `llm.api_key`
 >

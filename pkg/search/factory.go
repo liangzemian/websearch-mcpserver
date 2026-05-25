@@ -2,7 +2,7 @@ package search
 
 import (
 	"fmt"
-	"strings"
+	"websearch/pkg/antirobot"
 	"websearch/pkg/bing"
 	"websearch/pkg/config"
 	"websearch/pkg/log"
@@ -16,7 +16,6 @@ type SearchGroup struct {
 }
 
 // NewFromConfig 根据配置初始化搜索引擎组。
-// 包含 Bing 引擎初始化（兜底）和按模式选择主引擎。
 func NewFromConfig(conf config.Config) (*SearchGroup, error) {
 	g := &SearchGroup{}
 
@@ -33,24 +32,24 @@ func NewFromConfig(conf config.Config) (*SearchGroup, error) {
 		log.Info("搜索模式: engine（纯引擎模式，无需 API Key）")
 
 	case config.ModeTavily:
-		if conf.TavilySk == "" {
-			log.Error("mode=tavily 但未配置 tavily_sk，回退到 engine 模式")
+		if conf.Tavily.APIKey == "" {
+			log.Error("mode=tavily 但未配置 tavily.api_key，回退到 engine 模式")
 			if g.Fallback != nil {
 				g.Primary = g.Fallback
 			} else {
 				return nil, fmt.Errorf("无可用搜索引擎")
 			}
 		} else {
-			g.Primary = NewTavilySearch(conf.TavilySk, conf.BlackListHost)
+			g.Primary = NewTavilySearch(conf.Tavily.APIKey, conf.BlackListHost)
 		}
 
 	case config.ModeHybrid:
 		var engines []SearchInf
-		if conf.BaiduSK != "" {
-			engines = append(engines, NewBaiduSeach(conf.BaiduSK, conf.BlackListHost))
+		if conf.Baidu.APIKey != "" {
+			engines = append(engines, NewBaiduSeach(conf.Baidu.APIKey, conf.BlackListHost))
 		}
-		if conf.TavilySk != "" {
-			engines = append(engines, NewTavilySearch(conf.TavilySk, conf.BlackListHost))
+		if conf.Tavily.APIKey != "" {
+			engines = append(engines, NewTavilySearch(conf.Tavily.APIKey, conf.BlackListHost))
 		}
 		if len(engines) == 0 {
 			log.Error("mode=hybrid 但未配置任何 API Key，回退到 engine 模式")
@@ -64,108 +63,84 @@ func NewFromConfig(conf config.Config) (*SearchGroup, error) {
 		}
 
 	default: // baidu
-		if conf.BaiduSK == "" {
-			log.Error("mode=baidu 但未配置 baidu_sk，回退到 engine 模式")
+		if conf.Baidu.APIKey == "" {
+			log.Error("mode=baidu 但未配置 baidu.api_key，回退到 engine 模式")
 			if g.Fallback != nil {
 				g.Primary = g.Fallback
 			} else {
 				return nil, fmt.Errorf("无可用搜索引擎")
 			}
 		} else {
-			g.Primary = NewBaiduSeach(conf.BaiduSK, conf.BlackListHost)
+			g.Primary = NewBaiduSeach(conf.Baidu.APIKey, conf.BlackListHost)
 		}
 	}
 
 	log.Infof("搜索模式: %s", conf.GetMode())
 
-	// ── 学术搜索引擎：优先从主引擎获取，否则从 Bing 引擎获取 ──
-	if as, ok := g.Primary.(AcademicSearcher); ok {
-		g.Academic = as
-		log.Info("学术搜索引擎已就绪（主引擎）")
-	} else if g.Fallback != nil {
-		g.Academic = g.Fallback
-		log.Info("学术搜索引擎已就绪（Bing 引擎）")
-	}
+	// ── 学术搜索引擎（独立于主引擎） ──
+	initAcademicEngine(conf, g)
 
 	return g, nil
 }
 
 // initBingEngine 根据配置初始化 Bing 引擎适配器。
-// 默认所有引擎开启，通过 disable_* 字段关闭特定引擎。
 func initBingEngine(conf config.Config, g *SearchGroup) {
-	bc := conf.Bing
-	if !bc.Enabled {
+	if !conf.Bing.Enabled {
 		log.Info("Bing 引擎已禁用（bing.enabled=false）")
 		return
 	}
 
-	regularOpts := bing.DefaultOptions()
-	// 合并 black_list_host 和 bing.blocked
-	blocked := mergeBlocked(conf.BlackListHost, bc.Blocked)
-	regularOpts.Bing.Blocked = blocked
-	if bc.PerSec > 0 {
-		regularOpts.Bing.PerSec = bc.PerSec
+	bingOpts := bing.BingOpts{
+		Enabled: true,
+		Blocked: bing.MergeBlocked(conf.BlackListHost, conf.Bing.Blocked),
 	}
-	if bc.PerMin > 0 {
-		regularOpts.Bing.PerMin = bc.PerMin
+	if conf.Bing.PerSec > 0 {
+		bingOpts.PerSec = conf.Bing.PerSec
 	}
-
-	academicOpts := regularOpts
-	if bc.Academic {
-		academicOpts.Academic = true
-		academicOpts.Strategy = bing.StrategyParallel
-		academicOpts.BingFallback = bc.BingFallback
-		academicOpts.Arxiv.Enabled = !bc.DisableArxiv
-		academicOpts.Crossref.Enabled = !bc.DisableCrossref
-		academicOpts.OpenAlex.Enabled = !bc.DisableOpenAlex
-		academicOpts.SemanticScholar.Enabled = !bc.DisableSemanticScholar
-
-		if bc.IsInternational() {
-			academicOpts.Network = bing.RegionInternational
-		} else {
-			academicOpts.Network = bing.RegionChina
-			if academicOpts.Arxiv.Enabled {
-				log.Info("国内网络环境，arXiv 引擎将由引擎调度器自动跳过")
-			}
-			if academicOpts.SemanticScholar.Enabled {
-				log.Info("国内网络环境，Semantic Scholar 引擎将由引擎调度器自动跳过")
-			}
-		}
+	if conf.Bing.PerMin > 0 {
+		bingOpts.PerMin = conf.Bing.PerMin
 	}
 
-	g.Fallback = NewBingSearchAdapter(regularOpts, academicOpts)
-
-	engines := g.Fallback.Engines()
-	log.Infof("Bing 引擎已启用，通用引擎: %v", engines)
-	if bc.Academic {
-		acadEngines := g.Fallback.AcademicEngines()
-		log.Infof("学术引擎: %v", acadEngines)
-	}
+	g.Fallback = NewBingSearchAdapter(bingOpts)
+	log.Infof("Bing 引擎已启用，引擎: %v", g.Fallback.Engines())
 }
 
-// mergeBlocked 合并 black_list_host 和 bing.blocked，去重。
-func mergeBlocked(blackListHost, bingBlocked []string) []string {
-	seen := make(map[string]struct{})
-	var merged []string
-	for _, d := range blackListHost {
-		d = strings.ToLower(strings.TrimSpace(d))
-		if d == "" {
-			continue
-		}
-		if _, exists := seen[d]; !exists {
-			seen[d] = struct{}{}
-			merged = append(merged, d)
-		}
+// initAcademicEngine 根据配置初始化学术搜索引擎。
+func initAcademicEngine(conf config.Config, g *SearchGroup) {
+	acad := conf.Academic
+	if !acad.Enabled {
+		log.Info("学术引擎未启用（academic.enabled=false）")
+		return
 	}
-	for _, d := range bingBlocked {
-		d = strings.ToLower(strings.TrimSpace(d))
-		if d == "" {
-			continue
-		}
-		if _, exists := seen[d]; !exists {
-			seen[d] = struct{}{}
-			merged = append(merged, d)
-		}
+
+	network := antirobot.RegionChina
+	if conf.IsInternational() {
+		network = antirobot.RegionInternational
 	}
-	return merged
+
+	proxyEndpoint := ""
+	if conf.Proxy.Enabled {
+		proxyEndpoint = conf.Proxy.GetProxyEndpoint()
+	}
+
+	acadConf := AcademicConfig{
+		Network:         network,
+		Arxiv:           antirobot.ArxivOpts{Enabled: !acad.DisableArxiv},
+		Crossref:        antirobot.CrossrefOpts{Enabled: !acad.DisableCrossref},
+		OpenAlex:        antirobot.OpenAlexOpts{Enabled: !acad.DisableOpenAlex},
+		SemanticScholar: antirobot.SemanticScholarOpts{Enabled: !acad.DisableSemanticScholar},
+		PubMed:          antirobot.PubMedOpts{Enabled: !acad.DisablePubMed},
+		GoogleScholar:   antirobot.GoogleScholarOpts{Enabled: !acad.DisableGoogleScholar},
+		Proxy:           proxyEndpoint,
+	}
+
+	adapter := NewAcademicAdapter(acadConf)
+	if adapter == nil {
+		log.Info("无可用学术引擎")
+		return
+	}
+
+	g.Academic = adapter
+	engines := adapter.Engines()
+	log.Infof("学术引擎已启用: %v", engines)
 }

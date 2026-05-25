@@ -22,10 +22,23 @@ type PIDInfo struct {
 	Port int `json:"port"`
 }
 
-// PIDFileName 返回 PID 文件路径
+// exeDir 返回可执行文件所在目录（不受 cwd 影响）。
+func exeDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	return filepath.Dir(exe)
+}
+
+// PIDFileName 返回 PID 文件路径。
+// 优先级：baseDir > 可执行文件目录 > cwd > temp。
 func PIDFileName() string {
 	if baseDir != "" {
 		return filepath.Join(baseDir, ".websearch.pid")
+	}
+	if dir := exeDir(); dir != "" {
+		return filepath.Join(dir, ".websearch.pid")
 	}
 	if cwd, err := os.Getwd(); err == nil {
 		return filepath.Join(cwd, ".websearch.pid")
@@ -92,6 +105,22 @@ func PostRefCount(port, delta int) (*RefCountResponse, error) {
 // GetStatus 获取服务端状态
 func GetStatus(port int) (*RefCountResponse, error) {
 	url := AdminURL(port, "/status")
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result RefCountResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// GetHealth 通过 health 端点检测服务是否存活。
+func GetHealth(port int) (*RefCountResponse, error) {
+	url := AdminURL(port, "/health")
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err

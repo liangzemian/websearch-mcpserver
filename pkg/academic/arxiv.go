@@ -1,4 +1,4 @@
-package bing
+package academic
 
 import (
 	"encoding/xml"
@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"websearch/pkg/antirobot"
 )
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -18,24 +20,25 @@ type arxivEngine struct {
 	client *http.Client
 }
 
-// NewArxiv 创建 arXiv 引擎。
-func NewArxiv(_ ArxivOpts) Engine {
-	return &arxivEngine{
-		client: &http.Client{Timeout: 15 * time.Second},
+// NewArxiv 创建 arXiv 引擎。client 为 nil 时使用默认客户端。
+func NewArxiv(_ antirobot.ArxivOpts, client *http.Client) antirobot.Engine {
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
 	}
+	return &arxivEngine{client: client}
 }
 
-func (e *arxivEngine) Name() string         { return "arxiv" }
-func (e *arxivEngine) Region() NetworkRegion { return RegionChina }
+func (e *arxivEngine) Name() string                    { return "arxiv" }
+func (e *arxivEngine) Region() antirobot.NetworkRegion { return antirobot.RegionChina }
 
-func (e *arxivEngine) Search(query string, page int, timeRange TimeRange) (*SearchResponse, error) {
+func (e *arxivEngine) Search(query string, page int, timeRange antirobot.TimeRange) (*antirobot.SearchResponse, error) {
 	offset := (page - 1) * 10
 	if offset < 0 {
 		offset = 0
 	}
 
 	q := "all:" + query
-	if since := TimeRangeSince(timeRange); since != "" {
+	if since := antirobot.TimeRangeSince(timeRange); since != "" {
 		q += " AND submittedDate:[" + since + " TO *]"
 	}
 
@@ -92,13 +95,13 @@ type arxivCat struct {
 	Term string `xml:"term,attr"`
 }
 
-func (e *arxivEngine) parse(data []byte) (*SearchResponse, error) {
+func (e *arxivEngine) parse(data []byte) (*antirobot.SearchResponse, error) {
 	var feed arxivFeed
 	if err := xml.Unmarshal(data, &feed); err != nil {
 		return nil, fmt.Errorf("arxiv parse: %w", err)
 	}
 
-	results := make([]Result, 0, len(feed.Entries))
+	results := make([]antirobot.Result, 0, len(feed.Entries))
 	for _, entry := range feed.Entries {
 		if entry.ID == "" {
 			continue
@@ -119,11 +122,11 @@ func (e *arxivEngine) parse(data []byte) (*SearchResponse, error) {
 			}
 		}
 
-		title := collapseSpace(strings.TrimSpace(entry.Title))
-		summary := collapseSpace(strings.TrimSpace(entry.Summary))
+		title := antirobot.CollapseSpace(strings.TrimSpace(entry.Title))
+		summary := antirobot.CollapseSpace(strings.TrimSpace(entry.Summary))
 
-		results = append(results, Result{
-			Type:        ResultPaper,
+		results = append(results, antirobot.Result{
+			Type:        antirobot.ResultPaper,
 			Title:       title,
 			URL:         entry.ID,
 			Content:     summary,
@@ -135,5 +138,5 @@ func (e *arxivEngine) parse(data []byte) (*SearchResponse, error) {
 		})
 	}
 
-	return &SearchResponse{Engine: "arxiv", Results: results}, nil
+	return &antirobot.SearchResponse{Engine: "arxiv", Results: results}, nil
 }

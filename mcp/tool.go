@@ -16,15 +16,21 @@ import (
 
 // SearchParamsWithIntent LLM 摘要启用时使用的参数（含 intent）。
 type SearchParamsWithIntent struct {
-	Query    string `json:"query" jsonschema:"description,搜索关键词，例如 'Go并发编程' 或 '2024年新能源汽车销量'"`
-	Intent   string `json:"intent" jsonschema:"description,搜索意图，描述你希望通过搜索解决什么问题或获取什么信息。例如 '了解goroutine调度原理' '对比React和Vue的生态差异' '查找某API的用法示例'。提供意图后可获得更精准的结构化摘要"`
-	Academic bool   `json:"academic,omitempty" jsonschema:"description,是否启用学术搜索引擎进行学术论文检索。当需要查找论文、学术研究、文献综述、技术论文等学术相关内容时设为 true"`
+	Query  string `json:"query" jsonschema:"description,搜索关键词，例如 'Go并发编程' 或 '2024年新能源汽车销量'"`
+	Intent string `json:"intent" jsonschema:"description,搜索意图，描述你希望通过搜索解决什么问题或获取什么信息。例如 '了解goroutine调度原理' '对比React和Vue的生态差异' '查找某API的用法示例'。提供意图后可获得更精准的结构化摘要"`
 }
 
 // SearchParamsNoIntent LLM 摘要未启用时使用的参数（无 intent，节省上下文 token）。
 type SearchParamsNoIntent struct {
-	Query    string `json:"query" jsonschema:"description,搜索关键词，例如 'Go并发编程' 或 '2024年新能源汽车销量'"`
-	Academic bool   `json:"academic,omitempty" jsonschema:"description,是否启用学术搜索引擎进行学术论文检索。当需要查找论文、学术研究、文献综述、技术论文等学术相关内容时设为 true"`
+	Query string `json:"query" jsonschema:"description,搜索关键词，例如 'Go并发编程' 或 '2024年新能源汽车销量'"`
+}
+
+// AcademicSearchParams 学术搜索参数。
+type AcademicSearchParams struct {
+	Query     string   `json:"query" jsonschema:"description,学术搜索关键词，例如 'transformer attention mechanism' 或 'CRISPR gene editing'"`
+	Engines   []string `json:"engines,omitempty" jsonschema:"description,指定引擎子集（为空则使用全部已启用引擎）。示例: 医学论文用 [\"pubmed\"], CS预印本用 [\"arxiv\"], 物理/数学用 [\"arxiv\",\"crossref\"]"`
+	TimeRange string   `json:"time_range,omitempty" jsonschema:"description,时间范围过滤。可选值: year（近一年）, month（近一月）, week（近一周）, day（近一天）。为空则不限"`
+	Page      int      `json:"page,omitempty" jsonschema:"description,结果页码（默认 1），每页约 10 条"`
 }
 
 // CleanFetchParams cleanfetch 工具参数。
@@ -57,137 +63,78 @@ func GetCache() *cache.Cache {
 	return cacheInst
 }
 
-// isAcademicQuery 判断查询是否为学术意图。
-func isAcademicQuery(query, intent string) bool {
-	keywords := []string{
-		"论文", "paper", "学术", "academic", "研究", "research",
-		"文献", "journal", "arxiv", "doi", "引用", "citation",
-		"发表", "publish", "期刊", "会议", "conference",
-		"preprint", "预印本", "综述", "survey", "review",
-		"算法", "algorithm", "模型", "model",
-	}
-	combined := strings.ToLower(query + " " + intent)
-	for _, kw := range keywords {
-		if strings.Contains(combined, kw) {
-			return true
-		}
-	}
-	return false
-}
-
 // ── WebSearch 处理函数（两个版本适配不同 Params） ─────────────────────────────
 
 // WebSearchWithIntent LLM 启用时的 tool handler。
 func WebSearchWithIntent(ctx context.Context, req *mcp.CallToolRequest, params *SearchParamsWithIntent) (*mcp.CallToolResult, any, error) {
-	return doWebSearch(params.Query, params.Intent, params.Academic)
+	return doWebSearch(params.Query, params.Intent)
 }
 
 // WebSearchNoIntent LLM 未启用时的 tool handler。
 func WebSearchNoIntent(ctx context.Context, req *mcp.CallToolRequest, params *SearchParamsNoIntent) (*mcp.CallToolResult, any, error) {
-	return doWebSearch(params.Query, "", params.Academic)
+	return doWebSearch(params.Query, "")
 }
 
-// doWebSearch 搜索核心逻辑，两个 handler 共用。
-func doWebSearch(query, intent string, academic bool) (*mcp.CallToolResult, any, error) {
+// AcademicSearchHandler 学术搜索 tool handler。
+func AcademicSearchHandler(ctx context.Context, req *mcp.CallToolRequest, params *AcademicSearchParams) (*mcp.CallToolResult, any, error) {
+	return doAcademicSearch(params.Query, params.Engines, params.TimeRange, params.Page)
+}
+
+// doWebSearch 通用网页搜索逻辑。
+func doWebSearch(query, intent string) (*mcp.CallToolResult, any, error) {
 	if searchapi == nil {
 		return nil, nil, fmt.Errorf("api 初始化未完成")
 	}
 
 	// ---- 缓存查询 ----
 	if cacheInst != nil {
-		rec, hitType, err := cacheInst.Lookup(query, intent, academic)
+		rec, hitType, err := cacheInst.Lookup(query, intent, false)
 		if err != nil {
 			log.Errf("缓存查询异常，跳过缓存: %v", err)
-		} else if rec != nil {
-			// 缓存命中时检查是否为学术搜索缓存
-			if rec.Academic != academic {
-				log.Infof("缓存类型不匹配(请求 academic=%v, 缓存 academic=%v)，跳过缓存: query=%s", academic, rec.Academic, query)
-			} else {
-				switch hitType {
-				case "exact_intent":
-					if rec.Summary != "" {
-						log.Infof("缓存命中(exact_intent+summary): query=%s, academic=%v", query, academic)
-						return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: rec.Summary}}}, nil, nil
+		} else if rec != nil && !rec.Academic {
+			switch hitType {
+			case "exact_intent":
+				if rec.Summary != "" {
+					log.Infof("缓存命中(exact_intent+summary): query=%s", query)
+					return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: rec.Summary}}}, nil, nil
+				}
+			case "query_only":
+				results, parseErr := rec.GetRawResults()
+				if parseErr == nil {
+					log.Infof("缓存命中(query_only): query=%s", query)
+					ret, mergeErr := formatRawResults(query, results)
+					if mergeErr != nil {
+						return nil, nil, mergeErr
 					}
-					return nil, nil, fmt.Errorf("缓存命中(exact_intent)，但摘要为空")
-
-				case "query_only":
-					results, parseErr := rec.GetRawResults()
-					if parseErr == nil {
-						log.Infof("缓存命中(query_only): query=%s, academic=%v", query, academic)
-						ret, mergeErr := formatRawResults(query, results)
-						if mergeErr != nil {
-							return nil, nil, mergeErr
-						}
-						if intent != "" && summarizerInst != nil && rec.Summary == "" {
-							go func() {
-								defer func() {
-									if r := recover(); r != nil {
-										log.Errf("异步摘要 panic: %v", r)
-									}
-								}()
-								output, sumErr := summarizerInst.Summarize(query, intent, results)
-								if sumErr == nil {
-									_ = cacheInst.UpdateSummary(query, intent, output)
-									log.Infof("后台异步摘要完成: query=%s, intent=%s", query, intent)
+					if intent != "" && summarizerInst != nil && rec.Summary == "" {
+						go func() {
+							defer func() {
+								if r := recover(); r != nil {
+									log.Errf("异步摘要 panic: %v", r)
 								}
 							}()
-						}
-						return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: ret}}}, nil, nil
+							output, sumErr := summarizerInst.Summarize(query, intent, results)
+							if sumErr == nil {
+								_ = cacheInst.UpdateSummary(query, intent, output)
+								log.Infof("后台异步摘要完成: query=%s, intent=%s", query, intent)
+							}
+						}()
 					}
+					return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: ret}}}, nil, nil
 				}
 			}
 		}
 	}
 
-	// ---- 确定是否使用学术搜索 ----
-	useAcademic := academic || isAcademicQuery(query, intent)
-	var results []search.SearchResult
-	var err error
-	var academicFailed bool
-	var academicErrMsg string
-
-	if useAcademic && academicSearcher != nil {
-		log.Infof("使用学术搜索引擎: query=%s, explicit=%v", query, academic)
-		results, err = academicSearcher.SearchAcademicRaw(query)
+	// ---- 搜索 ----
+	results, err := searchapi.SearchRaw(query)
+	if err != nil {
+		if fallbackSearch != nil && searchapi != fallbackSearch {
+			log.Errf("主搜索引擎失败(%v)，回退到 Bing 引擎", err)
+			results, err = fallbackSearch.SearchRaw(query)
+		}
 		if err != nil {
-			log.Errf("学术搜索失败: %v", err)
-			academicFailed = true
-			academicErrMsg = err.Error()
-			results = nil
-		}
-	} else if useAcademic && academicSearcher == nil {
-		log.Errf("学术搜索被请求但未配置学术搜索引擎")
-		academicFailed = true
-		academicErrMsg = "学术搜索引擎未配置"
-	}
-
-	if results == nil {
-		// 如果用户明确请求学术搜索但失败，不静默回退
-		if academic && academicFailed {
-			errMsg := fmt.Sprintf("学术搜索失败: %s", academicErrMsg)
-			if academicSearcher == nil {
-				errMsg = "学术搜索引擎未启用，请检查配置 bing.academic 是否为 true"
-			}
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: errMsg}},
-			}, nil, nil
-		}
-
-		results, err = searchapi.SearchRaw(query)
-		if err != nil {
-			if fallbackSearch != nil && searchapi != fallbackSearch {
-				log.Errf("主搜索引擎失败(%v)，回退到 Bing 引擎", err)
-				results, err = fallbackSearch.SearchRaw(query)
-			}
-			if err != nil {
-				return nil, nil, err
-			}
-		}
-
-		// 如果学术搜索被自动检测到但失败，添加提示
-		if useAcademic && !academic && academicFailed {
-			log.Infof("学术搜索自动检测失败，已使用通用搜索: query=%s", query)
+			return nil, nil, err
 		}
 	}
 
@@ -196,7 +143,7 @@ func doWebSearch(query, intent string, academic bool) (*mcp.CallToolResult, any,
 		output, sumErr := summarizerInst.Summarize(query, intent, results)
 		if sumErr == nil {
 			if cacheInst != nil {
-				_ = cacheInst.Store(query, intent, useAcademic && !academicFailed, results, output)
+				_ = cacheInst.Store(query, intent, false, results, output)
 			}
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: output}}}, nil, nil
 		}
@@ -208,9 +155,64 @@ func doWebSearch(query, intent string, academic bool) (*mcp.CallToolResult, any,
 		return nil, nil, err
 	}
 	if cacheInst != nil {
-		_ = cacheInst.Store(query, intent, useAcademic && !academicFailed, results, "")
+		_ = cacheInst.Store(query, intent, false, results, "")
 	}
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: ret}}}, nil, nil
+}
+
+// doAcademicSearch 学术搜索逻辑。
+func doAcademicSearch(query string, engines []string, timeRange string, page int) (*mcp.CallToolResult, any, error) {
+	if academicSearcher == nil {
+		return nil, nil, fmt.Errorf("学术搜索引擎未启用，请检查配置 bing.academic 是否为 true")
+	}
+
+	// ---- 缓存查询 ----
+	enginesKey := strings.Join(engines, ",")
+	cacheKey := query + "|" + timeRange + "|" + enginesKey
+	if cacheInst != nil {
+		rec, hitType, err := cacheInst.Lookup(cacheKey, "", true)
+		if err != nil {
+			log.Errf("缓存查询异常，跳过缓存: %v", err)
+		} else if rec != nil && rec.Academic && hitType == "query_only" {
+			results, parseErr := rec.GetRawResults()
+			if parseErr == nil {
+				log.Infof("学术缓存命中: query=%s", query)
+				ret, mergeErr := formatAcademicResults(query, results)
+				if mergeErr == nil {
+					return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: ret}}}, nil, nil
+				}
+			}
+		}
+	}
+
+	// ---- 学术搜索 ----
+	opts := search.AcademicSearchOptions{
+		Page:      page,
+		TimeRange: timeRange,
+		Engines:   engines,
+	}
+
+	log.Infof("学术搜索: query=%s, engines=%v, timeRange=%s, page=%d", query, engines, timeRange, page)
+	results, err := academicSearcher.SearchAcademicRaw(query, opts)
+	if err != nil {
+		return nil, nil, fmt.Errorf("学术搜索失败: %w", err)
+	}
+
+	ret, err := formatAcademicResults(query, results)
+	if err != nil {
+		return nil, nil, err
+	}
+	if cacheInst != nil {
+		_ = cacheInst.Store(cacheKey, "", true, results, "")
+	}
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: ret}}}, nil, nil
+}
+
+func formatAcademicResults(query string, results []search.SearchResult) (string, error) {
+	if adapter, ok := academicSearcher.(*search.AcademicAdapter); ok {
+		return adapter.MergeContent(query, results)
+	}
+	return searchapi.MergeContent(query, results)
 }
 
 func formatRawResults(query string, results []search.SearchResult) (string, error) {

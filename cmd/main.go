@@ -13,15 +13,16 @@ import (
 )
 
 func runStart(conf *config.Config) {
-	info, err := daemon.ReadPID()
-	if err == nil && info != nil && daemon.IsRunning(info.PID) {
+	// 尝试通过 health 端点检测服务是否已运行
+	_, err := daemon.GetHealth(conf.Port)
+	if err == nil {
 		// 服务已在运行，增加引用计数
-		resp, err := daemon.PostRefCount(info.Port, 1)
+		refResp, err := daemon.PostRefCount(conf.Port, 1)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "server is running (PID %d), but failed to increase refcount: %v\n", info.PID, err)
+			fmt.Fprintf(os.Stderr, "server is running, but failed to increase refcount: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("server is already running (PID %d), refcount increased to %d\n", info.PID, resp.RefCount)
+		fmt.Printf("server is already running, refcount increased to %d\n", refResp.RefCount)
 		return
 	}
 
@@ -39,31 +40,28 @@ func runStart(conf *config.Config) {
 }
 
 func runStop(conf *config.Config) {
-	info, err := daemon.ReadPID()
-	if err != nil || info == nil {
-		fmt.Println("server is not running (no PID file)")
-		os.Exit(0)
-	}
-
-	if !daemon.IsRunning(info.PID) {
-		fmt.Printf("server is not running (stale PID file for PID %d)\n", info.PID)
+	// 直接通过 HTTP 检测服务是否运行
+	_, err := daemon.GetHealth(conf.Port)
+	if err != nil {
+		fmt.Println("server is not running")
 		_ = daemon.RemovePID()
 		os.Exit(0)
 	}
 
-	resp, err := daemon.PostRefCount(info.Port, -1)
+	refResp, err := daemon.PostRefCount(conf.Port, -1)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to decrease refcount: %v\n", err)
 		os.Exit(1)
 	}
 
-	if resp.RefCount > 0 {
-		fmt.Printf("refcount decreased to %d, server continues running (PID %d)\n", resp.RefCount, info.PID)
+	if refResp.RefCount > 0 {
+		fmt.Printf("refcount decreased to %d, server continues running\n", refResp.RefCount)
 		return
 	}
 
-	fmt.Printf("refcount reached zero, waiting for server (PID %d) to exit...\n", info.PID)
-	if daemon.WaitForExit(info.PID, 10*time.Second) {
+	fmt.Println("refcount reached zero, waiting for server to exit...")
+	// 轮询 health 端点直到服务停止
+	if waitForHealthDown(conf.Port, 10*time.Second) {
 		fmt.Println("server exited gracefully")
 		_ = daemon.RemovePID()
 	} else {
@@ -73,54 +71,57 @@ func runStop(conf *config.Config) {
 }
 
 func runKill(conf *config.Config) {
-	info, err := daemon.ReadPID()
-	if err != nil || info == nil {
-		fmt.Println("server is not running (no PID file)")
-		os.Exit(0)
-	}
-
-	if !daemon.IsRunning(info.PID) {
-		fmt.Printf("server is not running (stale PID file for PID %d)\n", info.PID)
+	// 先尝试 HTTP 关闭
+	_, err := daemon.GetHealth(conf.Port)
+	if err != nil {
+		fmt.Println("server is not running")
 		_ = daemon.RemovePID()
 		os.Exit(0)
 	}
 
-	// 先尝试请求服务端自行退出
-	_ = daemon.PostShutdown(info.Port)
-	if daemon.WaitForExit(info.PID, 3*time.Second) {
+	_ = daemon.PostShutdown(conf.Port)
+	if waitForHealthDown(conf.Port, 3*time.Second) {
 		fmt.Println("server exited gracefully")
 		_ = daemon.RemovePID()
 		return
 	}
 
-	// 强制杀死
-	if err := daemon.KillProcess(info.PID); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to kill process %d: %v\n", info.PID, err)
-		os.Exit(1)
+	// HTTP 关闭失败，尝试 PID 文件强杀
+	info, pidErr := daemon.ReadPID()
+	if pidErr == nil && info != nil && daemon.IsRunning(info.PID) {
+		if err := daemon.KillProcess(info.PID); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to kill process %d: %v\n", info.PID, err)
+			os.Exit(1)
+		}
+		fmt.Printf("server (PID %d) killed\n", info.PID)
+		_ = daemon.RemovePID()
+		return
 	}
-	fmt.Printf("server (PID %d) killed\n", info.PID)
-	_ = daemon.RemovePID()
+
+	fmt.Println("server did not respond to shutdown request")
+	os.Exit(1)
 }
 
 func runStatus(conf *config.Config) {
-	info, err := daemon.ReadPID()
-	if err != nil || info == nil {
-		fmt.Println("server status: stopped")
-		return
-	}
-
-	if !daemon.IsRunning(info.PID) {
-		fmt.Printf("server status: stopped (stale PID file for PID %d)\n", info.PID)
-		return
-	}
-
-	resp, err := daemon.GetStatus(info.Port)
+	resp, err := daemon.GetHealth(conf.Port)
 	if err != nil {
-		fmt.Printf("server status: running (PID %d, port %d), but failed to query refcount: %v\n", info.PID, info.Port, err)
+		fmt.Println("server status: stopped")
+		_ = daemon.RemovePID()
 		return
 	}
+	fmt.Printf("server status: running (port %d, refcount %d)\n", conf.Port, resp.RefCount)
+}
 
-	fmt.Printf("server status: running (PID %d, port %d, refcount %d)\n", info.PID, info.Port, resp.RefCount)
+// waitForHealthDown 轮询 health 端点直到服务停止。
+func waitForHealthDown(port int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := daemon.GetHealth(port); err != nil {
+			return true
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return false
 }
 
 func printUsage() {
