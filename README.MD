@@ -74,7 +74,9 @@ services:
 ### 源码构建
 
 ```bash
-go build -o websearch ./cmd/main.go
+go build -o websearch ./cmd/
+# 注入版本号
+go build -ldflags="-X main.version=v1.0.0" -o websearch ./cmd/
 ```
 
 ## 搜索模式
@@ -110,9 +112,9 @@ go build -o websearch ./cmd/main.go
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `url` | string | ✅ | 网页 URL（需配置 `jina.api_key`） |
+| `url` | string | ✅ | 网页 URL（需配置 `jina.api_key` + `proxy.enabled=true`） |
 
-> 工具注册条件：`smartsearch` 需 `bing.enabled=true`；`academicsearch` 需 `academic.enabled=true`；`cleanfetch` 需配置 `jina.api_key`。
+> 工具注册条件：`smartsearch` 需 `bing.enabled=true`；`academicsearch` 需 `academic.enabled=true`；`cleanfetch` 需配置 `jina.api_key` 且 `proxy.enabled=true`。
 
 ## 子命令
 
@@ -122,6 +124,7 @@ go build -o websearch ./cmd/main.go
 | `stop` | 减少引用（ref-1，归零优雅退出） |
 | `kill` | 强制结束（无视引用计数） |
 | `status` | 查看状态、端口、引用计数 |
+| `version` | 显示版本号（构建时注入，默认 `dev`） |
 | `install` | 安装 Windows 开机自启动 |
 | `uninstall` | 卸载 Windows 自启动 |
 

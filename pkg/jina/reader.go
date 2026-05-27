@@ -3,12 +3,15 @@ package jina
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
-	"websearch/pkg/client"
 	"websearch/pkg/config"
 	"websearch/pkg/log"
+	"websearch/pkg/proxy"
+
+	"resty.dev/v3"
 )
 
 const defaultBaseURL = "https://r.jina.ai"
@@ -33,24 +36,38 @@ type jinaResponse struct {
 type Reader struct {
 	apiKey  string
 	baseURL string
+	client  *resty.Client
 }
 
-func NewReader(apiKey, baseURL string) *Reader {
+func NewReader(apiKey, baseURL string, httpClient *http.Client) *Reader {
 	if baseURL == "" {
 		baseURL = defaultBaseURL
+	}
+	var rc *resty.Client
+	if httpClient != nil {
+		rc = resty.NewWithClient(httpClient)
+	} else {
+		rc = resty.New()
 	}
 	return &Reader{
 		apiKey:  apiKey,
 		baseURL: strings.TrimRight(baseURL, "/"),
+		client:  rc,
 	}
 }
 
-// NewFromConfig 根据配置创建 Jina Reader，未配置 API Key 时返回 nil。
-func NewFromConfig(conf config.JinaConfig) *Reader {
-	if conf.APIKey == "" {
+// NewFromConfig 根据配置创建 Jina Reader。
+// 需要同时配置 API Key 和启用代理，否则返回 nil。
+func NewFromConfig(jinaConf config.JinaConfig, proxyConf config.ProxyConfig) *Reader {
+	if jinaConf.APIKey == "" {
 		return nil
 	}
-	return NewReader(conf.APIKey, conf.BaseURL)
+	if !proxyConf.Enabled {
+		log.Info("Jina Reader 未启用：需要开启代理 (proxy.enabled=true)")
+		return nil
+	}
+	httpClient := proxy.NewHTTPClient(proxyConf.GetProxyEndpoint(), 30*time.Second)
+	return NewReader(jinaConf.APIKey, jinaConf.BaseURL, httpClient)
 }
 
 func (r *Reader) Fetch(rawURL string) (*FetchResult, error) {
@@ -75,7 +92,7 @@ func (r *Reader) Fetch(rawURL string) (*FetchResult, error) {
 	defer cancel()
 
 	var resp jinaResponse
-	res, err := client.DefaultClient.R().
+	res, err := r.client.R().
 		SetContext(ctx).
 		SetHeader("Accept", "application/json").
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", r.apiKey)).

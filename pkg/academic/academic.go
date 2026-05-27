@@ -1,12 +1,10 @@
 package academic
 
 import (
-	"crypto/tls"
-	"net/http"
-	"net/url"
 	"time"
 
 	"websearch/pkg/antirobot"
+	"websearch/pkg/proxy"
 )
 
 // BuildAcademic 根据配置创建学术搜索引擎列表。
@@ -41,7 +39,7 @@ func BuildAcademic(opts struct {
 
 	// 国际引擎：Semantic Scholar 和 Google Scholar 仅在配置代理时启用（国内无代理不可达）
 	if opts.Proxy != "" {
-		intlClient := buildProxyClient(opts.Proxy)
+		intlClient := proxy.NewHTTPClient(opts.Proxy, 15*time.Second)
 		if opts.SemanticScholar.Enabled && opts.Network >= antirobot.RegionInternational {
 			engines = append(engines, NewSemanticScholar(opts.SemanticScholar, intlClient))
 		}
@@ -51,24 +49,4 @@ func BuildAcademic(opts struct {
 	}
 
 	return engines
-}
-
-// buildProxyClient 创建带代理的 HTTP 客户端，proxy 为空时返回 nil（使用默认客户端）。
-func buildProxyClient(proxy string) *http.Client {
-	if proxy == "" {
-		return nil
-	}
-	proxyURL, err := url.Parse(proxy)
-	if err != nil {
-		return nil
-	}
-	return &http.Client{
-		Timeout: 15 * time.Second,
-		Transport: &http.Transport{
-			Proxy: http.ProxyURL(proxyURL),
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: false,
-			},
-		},
-	}
 }

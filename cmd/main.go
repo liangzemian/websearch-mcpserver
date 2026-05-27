@@ -12,6 +12,8 @@ import (
 	"websearch/server"
 )
 
+var version = "dev"
+
 func runStart(conf *config.Config) {
 	// 尝试通过 health 端点检测服务是否已运行
 	_, err := daemon.GetHealth(conf.Port)
@@ -134,6 +136,7 @@ func printUsage() {
 	fmt.Println("  stop        Decrease refcount, shutdown server when refcount reaches zero")
 	fmt.Println("  kill        Force kill the server")
 	fmt.Println("  status      Show server status")
+	fmt.Println("  version     Show version")
 	fmt.Println("  install     Install autostart script and create shortcut in startup folder (Windows only)")
 	fmt.Println("  uninstall   Remove shortcut from startup folder (Windows only)")
 }
@@ -152,6 +155,9 @@ func main() {
 
 	// 处理不需要配置文件的命令
 	switch args[0] {
+	case "version":
+		fmt.Println(version)
+		return
 	case "install":
 		runInstall()
 		return

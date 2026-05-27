@@ -65,8 +65,8 @@ func applyCache(conf config.Config) {
 }
 
 func applyJinaReader(conf config.Config) {
-	jinaInst = jina.NewFromConfig(conf.Jina)
+	jinaInst = jina.NewFromConfig(conf.Jina, conf.Proxy)
 	if jinaInst != nil {
-		log.Info("Jina Reader 已启用")
+		log.Info("Jina Reader 已启用（通过代理）")
 	}
 }
