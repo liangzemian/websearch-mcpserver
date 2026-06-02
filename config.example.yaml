@@ -32,6 +32,13 @@ black_list_host:
   - "sina.com.cn"
 
 # ==============================================
+# 全局限流配置（对所有搜索引擎统一生效）
+# ==============================================
+rate_limit:
+  per_sec: 3   # 每秒请求数上限（默认 3）
+  per_min: 60  # 每分钟请求数上限（默认 60）
+
+# ==============================================
 # 百度千帆 AI Search API（mode=baidu 或 hybrid 时需要）
 # 获取地址: https://console.bce.baidu.com/iam/#/iam/apikey/list
 # 环境变量: BAIDU_SK
@@ -54,8 +61,6 @@ black_list_host:
 bing:
   enabled: true
   blocked: [] # Bing 专用屏蔽域名（与 black_list_host 合并）
-  per_sec: 1 # 每秒限流（默认 1）
-  per_min: 20 # 每分钟限流（默认 20）
 
 # ==============================================
 # 学术搜索引擎（无需 API Key）

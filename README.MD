@@ -9,13 +9,13 @@
 
 ## 简介
 
-用 Go 开发的 MCP 搜索服务，内置 Bing 通用搜索引擎和 6 个学术搜索引擎。支持 Claude Code、Qwen Code、Cursor 等 MCP 客户端，也可作为 Go 模块嵌入。
+用 Go 开发的 MCP 搜索服务，内置百度网页搜索、Bing 通用搜索引擎和 6 个学术搜索引擎。支持 Claude Code、Qwen Code、Cursor 等 MCP 客户端，也可作为 Go 模块嵌入。
 
 ## 设计亮点
 
-- **零依赖启动** — `engine` 模式无需任何 API Key，内置 Bing 反爬引擎（UA 轮换、Cookie 轮换、指数退避、滑动窗口限流）
-- **多引擎并行编排** — 学术搜索并发请求多个引擎，结果按 URL 去重 + 分组归一化排序；hybrid 模式下 Bing 与 API 引擎原生混合
-- **智能回退** — 主引擎失败自动回退 Bing；LLM 摘要失败回退原始结果；cleanfetch 失败回退 Jina Reader；缓存异常跳过缓存
+- **零依赖启动** — `engine` 模式无需任何 API Key，内置百度网页搜索 + Bing 双引擎并发，代理启用时自动加入 Google
+- **多引擎并行编排** — 学术搜索并发请求多个引擎，结果按 URL 去重 + 分组归一化排序；hybrid 模式下多引擎原生混合
+- **智能回退** — 百度 SK 失败自动回退网页搜索；主引擎失败自动回退 Bing；LLM 摘要失败回退原始结果；cleanfetch 失败回退 Jina Reader；缓存异常跳过缓存
 - **增强型网页抓取** — 基于 go-webfetch，无需代理即可抓取网页，内置 SSRF 防护和 WAF 检测，大内容自动存储到临时文件
 - **引用计数进程管理** — 多客户端共享同一实例，归零自动优雅退出
 - **纯 Go 无 CGO** — SQLite 使用 `modernc.org/sqlite`，单二进制部署
@@ -24,12 +24,13 @@
 
 | 类别 | 能力 |
 |------|------|
-| **通用搜索** | 百度千帆、Tavily、Bing（内置），四种模式可选 |
+| **通用搜索** | 百度千帆、百度网页搜索（内置）、Tavily、Bing（内置）、Google（需代理） |
 | **学术搜索** | arXiv、Crossref、OpenAlex、PubMed（国内直连）+ Semantic Scholar、Google Scholar（需代理） |
 | **MCP 工具** | `smartsearch` 网络检索 · `academicsearch` 论文检索 · `cleanfetch` 网页抓取 · `pdf_parser` PDF 解析 |
 | **缓存** | SQLite 自动缓存，6h 过期，后台定时清理 |
 | **LLM 摘要** | 可选接入 OpenAI 兼容 API，生成结构化摘要 |
 | **站点屏蔽** | 全局 `black_list_host`，自动过滤低质量站点 |
+| **全局限流** | `rate_limit` 统一配置所有搜索引擎的请求速率 |
 | **SearXNG 兼容** | `/searxng/search` 端点，可对接 LiteLLM |
 
 ## 快速开始
@@ -142,12 +143,12 @@ Windows 自启动（可选）：下载后执行 `websearch-mcpserver.exe install
 
 | 模式 | 说明 | 需要 Key |
 |------|------|----------|
-| `baidu` | 百度千帆 AI Search | `BAIDU_SK` |
+| `baidu` | 百度千帆 SK（失败自动回退百度网页搜索）；无 SK 时直接用百度网页搜索 | `BAIDU_SK`（可选） |
 | `tavily` | Tavily Search API | `TAVILY_SK` |
-| `hybrid` | 百度 + Tavily + Bing 并发去重 | 两者 |
-| **`engine`** | Bing + 学术引擎 | **无需** |
+| `hybrid` | 百度 SK + 百度网页搜索 + Tavily + Bing + Google 并发去重 | 两者（可选） |
+| **`engine`** | **百度网页搜索 + Bing**（代理启用时加入 Google） | **无需** |
 
-> 所有模式下主引擎失败均自动回退 Bing。无 Key 时自动降级为 `engine`。
+> 所有模式下主引擎失败均自动回退。无 Key 时自动降级为 `engine`。`baidu` 模式无 SK 时使用百度网页搜索（tn=json，无需 API Key）。
 
 ## MCP 工具
 
@@ -298,7 +299,7 @@ search_tools:
 | 缓存结果过旧 | 缓存 6h 自动过期，或删除 `cache.storage_path` 文件重启 |
 | Docker 容器立即退出 | 确认挂载了 `config.yaml`，检查日志输出 |
 | stop 后进程仍在 | 等待最多 10s；若仍在用 `kill` 强制结束 |
-| Bing 搜索无结果 | 检查网络连通性；Bing 有反爬限流（默认 1/s, 20/min） |
+| 搜索无结果或限流 | 检查 `rate_limit` 配置（默认 3/s, 60/min）；代理未启用时 Google 不可用 |
 
 ## 变更日志
 

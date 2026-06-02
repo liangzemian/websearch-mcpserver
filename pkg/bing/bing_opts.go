@@ -15,10 +15,10 @@ type BingOpts struct {
 func NewBing(opts BingOpts) antirobot.Engine {
 	perSec, perMin := opts.PerSec, opts.PerMin
 	if perSec <= 0 {
-		perSec = 1
+		perSec = 3
 	}
 	if perMin <= 0 {
-		perMin = 20
+		perMin = 60
 	}
 	e := &bingEngine{
 		opts:    opts,

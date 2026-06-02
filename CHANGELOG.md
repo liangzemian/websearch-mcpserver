@@ -1,5 +1,30 @@
 # Changelog
 
+## v2.4.0 — 2026-06-02
+
+### 新增
+- **百度网页搜索引擎**：参考 SearXNG baidu.py 实现，使用 `tn=json` JSON API 直接抓取百度搜索结果，无需 API Key
+  - `mode=baidu` 无 SK 时作为主引擎；有 SK 时 SK 失败自动回退网页搜索
+  - `mode=engine` 默认与 Bing 并发搜索
+  - `mode=hybrid` 自动参与混合搜索
+- **Google 搜索引擎**：参考 SearXNG google.py 实现，HTML 解析 Google 搜索结果，需代理访问
+  - `proxy.enabled=true` 时自动启用，支持 CAPTCHA 检测、CONSENT Cookie 绕过
+  - `mode=engine` / `mode=hybrid` 代理启用时自动加入并发搜索
+- **全局限流配置**：新增 `rate_limit` 配置节（`per_sec` / `per_min`），对所有搜索引擎统一生效（默认 3/s, 60/min）
+
+### 变更
+- **`engine` 模式引擎组合**：从仅 Bing 改为百度网页搜索 + Bing 并发（代理启用时加入 Google）
+- **`hybrid` 模式百度策略**：有 SK 时使用 `BaiduWithFallback(SK, 网页搜索)`，SK 失败自动回退；无 SK 时直接用网页搜索
+- **`baidu` 模式增强**：无 SK 时不再回退到 Bing，而是使用百度网页搜索引擎
+- **限流默认值提升**：全引擎默认 3/s, 60/min（原 Bing 1/s, 20/min）
+- Bing 限流配置从 `bing.per_sec` / `bing.per_min` 迁移到全局 `rate_limit` 配置
+
+### 新增文件
+- `pkg/baidu/` — 百度网页搜索引擎（engine + opts + 15 个单元测试）
+- `pkg/google/` — Google 搜索引擎（engine + opts + 17 个单元测试）
+- `pkg/search/engine_adapter.go` — 通用引擎适配器（antirobot.Engine → SearchInf）
+- `pkg/search/baidu_fallback.go` — 百度 SK 回退包装器
+
 ## 2026-05-28
 
 ### 新增

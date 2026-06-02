@@ -3,8 +3,10 @@ package search
 import (
 	"fmt"
 	"websearch/pkg/antirobot"
+	"websearch/pkg/baidu"
 	"websearch/pkg/bing"
 	"websearch/pkg/config"
+	"websearch/pkg/google"
 	"websearch/pkg/log"
 )
 
@@ -22,14 +24,34 @@ func NewFromConfig(conf config.Config) (*SearchGroup, error) {
 	// ── 初始化 Bing 引擎（兜底） ──
 	initBingEngine(conf, g)
 
+	// ── 初始化百度网页搜索引擎（无需 API Key，SK 失败时回退） ──
+	baiduWebAdapter := initBaiduWebEngine(conf)
+
+	// ── 初始化 Google 引擎（需代理） ──
+	googleAdapter := initGoogleEngine(conf)
+
 	// ── 按模式选择主引擎 ──
 	switch conf.GetMode() {
 	case config.ModeEngine:
-		if g.Fallback == nil {
-			return nil, fmt.Errorf("engine 模式需要 bing 引擎，请检查 bing 配置")
+		var engines []SearchInf
+		if baiduWebAdapter != nil {
+			engines = append(engines, baiduWebAdapter)
 		}
-		g.Primary = g.Fallback
-		log.Info("搜索模式: engine（纯引擎模式，无需 API Key）")
+		if g.Fallback != nil {
+			engines = append(engines, g.Fallback)
+		}
+		if googleAdapter != nil {
+			engines = append(engines, googleAdapter)
+		}
+		if len(engines) == 0 {
+			return nil, fmt.Errorf("engine 模式需要至少一个引擎，请检查 bing 配置")
+		}
+		if len(engines) == 1 {
+			g.Primary = engines[0]
+		} else {
+			g.Primary = NewHybridSearch(engines...)
+		}
+		log.Infof("搜索模式: engine（无需 API Key，%d 个引擎并发）", len(engines))
 
 	case config.ModeTavily:
 		if conf.Tavily.APIKey == "" {
@@ -48,6 +70,9 @@ func NewFromConfig(conf config.Config) (*SearchGroup, error) {
 		if conf.Baidu.APIKey != "" {
 			engines = append(engines, NewBaiduSeach(conf.Baidu.APIKey, conf.BlackListHost))
 		}
+		if baiduWebAdapter != nil {
+			engines = append(engines, baiduWebAdapter)
+		}
 		if conf.Tavily.APIKey != "" {
 			engines = append(engines, NewTavilySearch(conf.Tavily.APIKey, conf.BlackListHost))
 		}
@@ -55,21 +80,31 @@ func NewFromConfig(conf config.Config) (*SearchGroup, error) {
 		if g.Fallback != nil {
 			engines = append(engines, g.Fallback)
 		}
+		if googleAdapter != nil {
+			engines = append(engines, googleAdapter)
+		}
 		if len(engines) == 0 {
 			return nil, fmt.Errorf("无可用搜索引擎，请检查配置")
 		}
 		g.Primary = NewHybridSearch(engines...)
 
 	default: // baidu
-		if conf.Baidu.APIKey == "" {
-			log.Error("mode=baidu 但未配置 baidu.api_key，回退到 engine 模式")
-			if g.Fallback != nil {
-				g.Primary = g.Fallback
+		if conf.Baidu.APIKey != "" {
+			primary := NewBaiduSeach(conf.Baidu.APIKey, conf.BlackListHost)
+			if baiduWebAdapter != nil {
+				g.Primary = NewBaiduWithFallback(primary, baiduWebAdapter)
+				log.Info("搜索模式: baidu（千帆 SK + 网页搜索回退）")
 			} else {
-				return nil, fmt.Errorf("无可用搜索引擎")
+				g.Primary = primary
 			}
+		} else if baiduWebAdapter != nil {
+			g.Primary = baiduWebAdapter
+			log.Info("搜索模式: baidu（网页搜索，无需 API Key）")
+		} else if g.Fallback != nil {
+			log.Error("mode=baidu 但未配置 baidu.api_key 且无可用引擎，回退到 Bing")
+			g.Primary = g.Fallback
 		} else {
-			g.Primary = NewBaiduSeach(conf.Baidu.APIKey, conf.BlackListHost)
+			return nil, fmt.Errorf("无可用搜索引擎")
 		}
 	}
 
@@ -79,6 +114,38 @@ func NewFromConfig(conf config.Config) (*SearchGroup, error) {
 	initAcademicEngine(conf, g)
 
 	return g, nil
+}
+
+// initBaiduWebEngine 初始化百度网页搜索引擎。
+func initBaiduWebEngine(conf config.Config) *EngineSearchAdapter {
+	blocked := bing.MergeBlocked(conf.BlackListHost, nil)
+	eng := baidu.NewBaiduWeb(baidu.BaiduOpts{
+		Enabled: true,
+		Blocked: blocked,
+		PerSec:  conf.GetRateLimitPerSec(),
+		PerMin:  conf.GetRateLimitPerMin(),
+	})
+	adapter := NewEngineSearchAdapter("baidu_web", eng)
+	log.Info("百度网页搜索引擎已启用（tn=json，无需 API Key）")
+	return adapter
+}
+
+// initGoogleEngine 初始化 Google 引擎（仅在代理启用时可用）。
+func initGoogleEngine(conf config.Config) *EngineSearchAdapter {
+	if !conf.Proxy.Enabled {
+		return nil
+	}
+	blocked := bing.MergeBlocked(conf.BlackListHost, nil)
+	eng := google.NewGoogle(google.GoogleOpts{
+		Enabled:       true,
+		Blocked:       blocked,
+		ProxyEndpoint: conf.Proxy.GetProxyEndpoint(),
+		PerSec:        conf.GetRateLimitPerSec(),
+		PerMin:        conf.GetRateLimitPerMin(),
+	})
+	adapter := NewEngineSearchAdapter("google", eng)
+	log.Infof("Google 引擎已启用（代理: %s）", conf.Proxy.GetProxyEndpoint())
+	return adapter
 }
 
 // initBingEngine 根据配置初始化 Bing 引擎适配器。
@@ -91,12 +158,8 @@ func initBingEngine(conf config.Config, g *SearchGroup) {
 	bingOpts := bing.BingOpts{
 		Enabled: true,
 		Blocked: bing.MergeBlocked(conf.BlackListHost, conf.Bing.Blocked),
-	}
-	if conf.Bing.PerSec > 0 {
-		bingOpts.PerSec = conf.Bing.PerSec
-	}
-	if conf.Bing.PerMin > 0 {
-		bingOpts.PerMin = conf.Bing.PerMin
+		PerSec:  conf.GetRateLimitPerSec(),
+		PerMin:  conf.GetRateLimitPerMin(),
 	}
 
 	g.Fallback = NewBingSearchAdapter(bingOpts)

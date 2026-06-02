@@ -27,6 +27,7 @@ type Config struct {
 	Mode          string           `mapstructure:"mode"`
 	Network       string           `mapstructure:"network"`        // 全局网络区域: china / international
 	BlackListHost []string         `mapstructure:"black_list_host"` // 全局屏蔽站点
+	RateLimit     RateLimitConfig  `mapstructure:"rate_limit"`      // 全局限流配置
 	Baidu         BaiduConfig      `mapstructure:"baidu"`
 	Tavily        TavilyConfig     `mapstructure:"tavily"`
 	LLM           LLMConfig        `mapstructure:"llm"`
@@ -53,8 +54,12 @@ type TavilyConfig struct {
 type BingConfig struct {
 	Enabled bool     `mapstructure:"enabled"` // 总开关（默认 true）
 	Blocked []string `mapstructure:"blocked"` // Bing 屏蔽域名
-	PerSec  int      `mapstructure:"per_sec"` // 每秒限流（默认 1）
-	PerMin  int      `mapstructure:"per_min"` // 每分钟限流（默认 20）
+}
+
+// RateLimitConfig 全局搜索引擎限流配置（对所有引擎统一生效）。
+type RateLimitConfig struct {
+	PerSec int `mapstructure:"per_sec"` // 每秒请求数上限（默认 3）
+	PerMin int `mapstructure:"per_min"` // 每分钟请求数上限（默认 60）
 }
 
 // ── 学术引擎配置 ──
@@ -180,6 +185,22 @@ func (c Config) NeedsAPIKey() bool {
 	default:
 		return true
 	}
+}
+
+// GetRateLimitPerSec 返回每秒限流上限（默认 3）。
+func (c Config) GetRateLimitPerSec() int {
+	if c.RateLimit.PerSec > 0 {
+		return c.RateLimit.PerSec
+	}
+	return 3
+}
+
+// GetRateLimitPerMin 返回每分钟限流上限（默认 60）。
+func (c Config) GetRateLimitPerMin() int {
+	if c.RateLimit.PerMin > 0 {
+		return c.RateLimit.PerMin
+	}
+	return 60
 }
 
 // ── 配置加载 ──

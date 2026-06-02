@@ -1,0 +1,369 @@
+package google
+
+import (
+	"fmt"
+	"io"
+	"math/rand"
+	"net/http"
+	"net/url"
+	"strings"
+	"sync"
+	"time"
+
+	"websearch/pkg/antirobot"
+
+	"github.com/PuerkitoBio/goquery"
+)
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Google 通用网页搜索引擎（HTML 解析，需代理访问）
+// 参考: https://github.com/searxng/searxng/blob/master/searx/engines/google.py
+// ──────────────────────────────────────────────────────────────────────────────
+
+type googleEngine struct {
+	opts    GoogleOpts
+	limiter *antirobot.RateLimiter
+
+	mu          sync.Mutex
+	client      *http.Client
+	ua          string
+	reqCount    int
+	backoff     time.Duration
+	consecFails int
+}
+
+var googleUAs = []string{
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+}
+
+var googleAcceptVariants = []string{
+	"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+	"text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+}
+
+var googleLangVariants = []string{
+	"en-US,en;q=0.9",
+	"en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+	"zh-CN,zh;q=0.9,en;q=0.8",
+}
+
+var timeRangeMap = map[antirobot.TimeRange]string{
+	antirobot.TimeRangeDay:   "d",
+	antirobot.TimeRangeWeek:  "w",
+	antirobot.TimeRangeMonth: "m",
+	antirobot.TimeRangeYear:  "y",
+}
+
+const (
+	googleBaseDelay       = 1 * time.Second
+	googleJitter          = 1 * time.Second
+	googleMaxBackoff      = 120 * time.Second
+	googleSessionLifetime = 20
+	googleResultsPerPage  = 10
+)
+
+// ── 接口实现 ──
+
+func (e *googleEngine) Name() string                    { return "google" }
+func (e *googleEngine) Region() antirobot.NetworkRegion { return antirobot.RegionInternational }
+
+func (e *googleEngine) Search(query string, page int, timeRange antirobot.TimeRange) (*antirobot.SearchResponse, error) {
+	if !e.limiter.Allow() {
+		return &antirobot.SearchResponse{Engine: "google", Results: []antirobot.Result{}}, nil
+	}
+
+	e.preDelay()
+	u := e.buildURL(query, page, timeRange)
+
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+	e.setHeaders(req)
+	// 绕过 Cookie 同意页面
+	req.AddCookie(&http.Cookie{Name: "CONSENT", Value: "YES+"})
+
+	resp, err := e.client.Do(req)
+	if err != nil {
+		e.recordFail()
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		e.recordFail()
+		return nil, err
+	}
+
+	// 检测 Google CAPTCHA / sorry 页面
+	if err := detectSorry(resp, string(body)); err != nil {
+		e.recordFail()
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		e.recordFail()
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	results := e.parseResults(string(body))
+
+	if len(e.opts.Blocked) > 0 {
+		results = e.filterBlocked(results)
+	}
+
+	e.recordSuccess()
+	e.rotateSessionIfNeeded()
+
+	return &antirobot.SearchResponse{Engine: "google", Results: results}, nil
+}
+
+// ── CAPTCHA 检测 ──
+
+func detectSorry(resp *http.Response, body string) error {
+	if resp.Request != nil {
+		host := resp.Request.URL.Hostname()
+		if host == "sorry.google.com" || strings.Contains(resp.Request.URL.Path, "/sorry") {
+			return fmt.Errorf("blocked by Google CAPTCHA (sorry page)")
+		}
+	}
+	if resp.StatusCode == 302 {
+		return fmt.Errorf("blocked by Google CAPTCHA (302 redirect)")
+	}
+	if len(body) < 2000 && strings.Contains(body, "/sorry/") {
+		return fmt.Errorf("blocked by Google CAPTCHA (sorry page in body)")
+	}
+	return nil
+}
+
+// ── URL 构造 ──
+
+func (e *googleEngine) buildURL(query string, page int, timeRange antirobot.TimeRange) string {
+	q := url.Values{}
+	q.Set("q", e.applyBlocked(query))
+	q.Set("hl", "en")
+	q.Set("ie", "utf8")
+	q.Set("oe", "utf8")
+	q.Set("filter", "0")
+
+	start := (page - 1) * googleResultsPerPage
+	if start > 0 {
+		q.Set("start", fmt.Sprintf("%d", start))
+	}
+
+	if tr, ok := timeRangeMap[timeRange]; ok {
+		q.Set("tbs", "qdr:"+tr)
+	}
+
+	return "https://www.google.com/search?" + q.Encode()
+}
+
+// ── 请求头 ──
+
+func (e *googleEngine) setHeaders(req *http.Request) {
+	e.mu.Lock()
+	ua := e.ua
+	e.mu.Unlock()
+	req.Header.Set("User-Agent", ua)
+	req.Header.Set("Accept", googleAcceptVariants[rand.Intn(len(googleAcceptVariants))])
+	req.Header.Set("Accept-Language", googleLangVariants[rand.Intn(len(googleLangVariants))])
+	req.Header.Set("DNT", "1")
+	req.Header.Set("Upgrade-Insecure-Requests", "1")
+	req.Header.Set("Cache-Control", "max-age=0")
+	req.Header.Set("Sec-Fetch-Dest", "document")
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.Header.Set("Sec-Fetch-Site", "none")
+	req.Header.Set("Sec-Fetch-User", "?1")
+}
+
+// ── 反爬防御 ──
+
+func (e *googleEngine) preDelay() {
+	e.mu.Lock()
+	bo := e.backoff
+	e.mu.Unlock()
+	delay := googleBaseDelay + time.Duration(rand.Int63n(int64(googleJitter)))
+	if bo > 0 {
+		delay += bo
+	}
+	time.Sleep(delay)
+}
+
+func (e *googleEngine) recordSuccess() {
+	e.mu.Lock()
+	e.backoff = 0
+	e.consecFails = 0
+	e.mu.Unlock()
+}
+
+func (e *googleEngine) recordFail() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.consecFails++
+	bo := googleBaseDelay * time.Duration(1<<uint(e.consecFails))
+	if bo > googleMaxBackoff {
+		bo = googleMaxBackoff
+	}
+	e.backoff = bo
+}
+
+func (e *googleEngine) rotateSessionIfNeeded() {
+	e.mu.Lock()
+	e.reqCount++
+	rotate := e.reqCount >= googleSessionLifetime
+	e.mu.Unlock()
+	if rotate {
+		e.rotateSession()
+	}
+}
+
+func (e *googleEngine) rotateSession() {
+	e.client = e.opts.newHTTPClient()
+	e.ua = googleUAs[rand.Intn(len(googleUAs))]
+	e.reqCount = 0
+}
+
+// ── HTML 解析 ──
+
+func (e *googleEngine) parseResults(htmlText string) []antirobot.Result {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlText))
+	if err != nil {
+		return nil
+	}
+
+	var results []antirobot.Result
+
+	doc.Find("div.g").Each(func(_ int, sel *goquery.Selection) {
+		titleSel := sel.Find("h3").First()
+		if titleSel.Length() == 0 {
+			return
+		}
+		title := strings.TrimSpace(titleSel.Text())
+		if title == "" {
+			return
+		}
+
+		href := extractURL(sel)
+		if href == "" {
+			return
+		}
+
+		content := extractContent(sel)
+
+		results = append(results, antirobot.Result{
+			Type:    antirobot.ResultWeb,
+			Title:   title,
+			URL:     href,
+			Content: antirobot.CollapseSpace(content),
+			Engine:  "google",
+		})
+	})
+
+	return results
+}
+
+func extractURL(sel *goquery.Selection) string {
+	// 优先找直接 http 链接
+	var href string
+	sel.Find("a[href]").Each(func(_ int, a *goquery.Selection) {
+		if href != "" {
+			return
+		}
+		h, _ := a.Attr("href")
+		if strings.HasPrefix(h, "http://") || strings.HasPrefix(h, "https://") {
+			href = h
+		}
+	})
+	if href != "" {
+		return href
+	}
+
+	// 回退：/url?q= 重定向格式
+	sel.Find("a[href]").Each(func(_ int, a *goquery.Selection) {
+		if href != "" {
+			return
+		}
+		h, _ := a.Attr("href")
+		if strings.HasPrefix(h, "/url?q=") {
+			u, err := url.Parse(h)
+			if err == nil {
+				q := u.Query().Get("q")
+				if q != "" {
+					href = q
+				}
+			}
+		}
+	})
+	return href
+}
+
+func extractContent(sel *goquery.Selection) string {
+	// 尝试多个选择器提取摘要
+	for _, selector := range []string{
+		"div[data-sncf]",
+		"div.VwiC3b",
+		"div.IsZvec",
+		"span.aCOpRe",
+	} {
+		if s := sel.Find(selector).First(); s.Length() > 0 {
+			text := strings.TrimSpace(s.Text())
+			if text != "" {
+				return text
+			}
+		}
+	}
+	// 回退：取容器内除标题外的全部文本
+	fullText := strings.TrimSpace(sel.Text())
+	titleText := strings.TrimSpace(sel.Find("h3").First().Text())
+	return strings.TrimSpace(strings.Replace(fullText, titleText, "", 1))
+}
+
+// ── 站点屏蔽 ──
+
+func (e *googleEngine) applyBlocked(query string) string {
+	if len(e.opts.Blocked) > 5 {
+		return query
+	}
+	var sb strings.Builder
+	sb.WriteString(query)
+	for _, d := range e.opts.Blocked {
+		sb.WriteString(" -site:")
+		sb.WriteString(d)
+	}
+	return sb.String()
+}
+
+func (e *googleEngine) filterBlocked(results []antirobot.Result) []antirobot.Result {
+	blocked := make(map[string]struct{}, len(e.opts.Blocked))
+	for _, d := range e.opts.Blocked {
+		blocked[strings.ToLower(d)] = struct{}{}
+	}
+	filtered := make([]antirobot.Result, 0, len(results))
+	for _, r := range results {
+		host := extractHost(r.URL)
+		hit := false
+		for d := range blocked {
+			if host == d || strings.HasSuffix(host, "."+d) {
+				hit = true
+				break
+			}
+		}
+		if !hit {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
+}
+
+func extractHost(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	host := strings.ToLower(u.Hostname())
+	return strings.TrimPrefix(host, "www.")
+}
