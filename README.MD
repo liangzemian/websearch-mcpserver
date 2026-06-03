@@ -13,7 +13,9 @@
 
 ## 设计亮点
 
-- **零依赖启动** — `engine` 模式无需任何 API Key，内置百度网页搜索 + Bing 双引擎并发，代理启用时自动加入 Google
+- **零依赖启动** — `engine` 模式无需任何 API Key，内置百度网页搜索 + Bing 双引擎并发，代理可用时自动加入 Google
+- **系统代理自动检测** — 默认读取 Windows 注册表 / 环境变量，Clash 等代理软件开启系统代理后 Google、学术引擎、Jina Reader 自动走代理，无需手动配置
+- **智能限流重试** — 所有 HTTP 客户端自动处理 429 限流（读取 `Retry-After` 头等待后重试），arXiv 引擎内置 1 req/s 限流器避免触发限流
 - **多引擎并行编排** — 学术搜索并发请求多个引擎，结果按 URL 去重 + 分组归一化排序；hybrid 模式下多引擎原生混合
 - **智能回退** — 百度 SK 失败自动回退网页搜索；主引擎失败自动回退 Bing；LLM 摘要失败回退原始结果；cleanfetch 失败回退 Jina Reader；缓存异常跳过缓存
 - **增强型网页抓取** — 基于 go-webfetch，无需代理即可抓取网页，内置 SSRF 防护和 WAF 检测，大内容自动存储到临时文件
@@ -24,8 +26,8 @@
 
 | 类别 | 能力 |
 |------|------|
-| **通用搜索** | 百度千帆、百度网页搜索（内置）、Tavily、Bing（内置）、Google（需代理） |
-| **学术搜索** | arXiv、Crossref、OpenAlex、PubMed（国内直连）+ Semantic Scholar、Google Scholar（需代理） |
+| **通用搜索** | 百度千帆、百度网页搜索（内置）、Tavily、Bing（内置）、Google（自动检测代理） |
+| **学术搜索** | arXiv、Crossref、OpenAlex、PubMed（国内直连）+ Semantic Scholar、Google Scholar（自动检测代理） |
 | **MCP 工具** | `smartsearch` 网络检索 · `academicsearch` 论文检索 · `cleanfetch` 网页抓取 · `pdf_parser` PDF 解析 |
 | **缓存** | SQLite 自动缓存，6h 过期，后台定时清理 |
 | **LLM 摘要** | 可选接入 OpenAI 兼容 API，生成结构化摘要 |
@@ -146,7 +148,7 @@ Windows 自启动（可选）：下载后执行 `websearch-mcpserver.exe install
 | `baidu` | 百度千帆 SK（失败自动回退百度网页搜索）；无 SK 时直接用百度网页搜索 | `BAIDU_SK`（可选） |
 | `tavily` | Tavily Search API | `TAVILY_SK` |
 | `hybrid` | 百度 SK + 百度网页搜索 + Tavily + Bing + Google 并发去重 | 两者（可选） |
-| **`engine`** | **百度网页搜索 + Bing**（代理启用时加入 Google） | **无需** |
+| **`engine`** | **百度网页搜索 + Bing**（代理可用时自动加入 Google） | **无需** |
 
 > 所有模式下主引擎失败均自动回退。无 Key 时自动降级为 `engine`。`baidu` 模式无 SK 时使用百度网页搜索（tn=json，无需 API Key）。
 
@@ -174,7 +176,7 @@ Windows 自启动（可选）：下载后执行 `websearch-mcpserver.exe install
 |------|------|------|------|
 | `url` | string | ✅ | 网页 URL |
 
-需配置 `cleanfetch.enabled: true`。基于 go-webfetch，无需代理；失败时若代理已开启则回退 Jina Reader。
+需配置 `cleanfetch.enabled: true`。基于 go-webfetch，无需代理；失败时自动回退 Jina Reader（需配置 `jina.api_key`，代理自动检测）。
 
 ### `pdf_parser` — 本地 PDF 解析
 
@@ -251,7 +253,7 @@ mode: engine
 
 - 医学/生物 → `pubmed`；CS/AI → `arxiv` + `semantic_scholar`；全学科 → `crossref` + `openalex`
 - 国内保持 `network: china`，海外引擎自动跳过
-- 需要 Semantic Scholar / Google Scholar 时配置 `proxy.enabled: true`
+- Semantic Scholar / Google Scholar 默认禁用，设置 `disable_semantic_scholar: false` / `disable_google_scholar: false` 即可启用，代理自动检测
 
 ## 作为 Go 模块嵌入
 
@@ -294,12 +296,12 @@ search_tools:
 | 问题 | 排查 |
 |------|------|
 | 启动后工具不可用 | 检查 `mode` 和对应 Key；`cleanfetch` 需 `cleanfetch.enabled: true` |
-| 学术搜索超时 | 检查 `network` 设置；海外引擎需 `proxy.enabled: true` |
+| 学术搜索超时 | 检查 `network` 设置；海外引擎需代理（默认自动检测系统代理） |
 | 端口被占用 | `status` 查看是否已运行，或 `kill` 后重启 |
 | 缓存结果过旧 | 缓存 6h 自动过期，或删除 `cache.storage_path` 文件重启 |
 | Docker 容器立即退出 | 确认挂载了 `config.yaml`，检查日志输出 |
 | stop 后进程仍在 | 等待最多 10s；若仍在用 `kill` 强制结束 |
-| 搜索无结果或限流 | 检查 `rate_limit` 配置（默认 3/s, 60/min）；代理未启用时 Google 不可用 |
+| 搜索无结果或限流 | 检查 `rate_limit` 配置（默认 3/s, 60/min）；Google 等引擎代理不可用时自动跳过 |
 
 ## 变更日志
 

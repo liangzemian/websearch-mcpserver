@@ -1,5 +1,34 @@
 # Changelog
 
+## v2.5.0 — 2026-06-03
+
+### 新增
+- **系统代理自动检测**：默认读取 Windows 注册表（`ProxyEnable` / `ProxyServer`）和环境变量（`HTTP_PROXY` / `HTTPS_PROXY`），Clash、V2RayN 等代理软件开启系统代理后自动生效，无需手动配置 `proxy.enabled` 和重启服务
+  - `pkg/proxy/sysproxy.go` — 跨平台系统代理检测（Windows 注册表 + WinHTTP + 环境变量）
+  - `pkg/proxy/detector.go` — 后台轮询检测器，30s 周期检测代理变更并通知回调
+  - `pkg/proxy/proxy.go` — `DynamicProxyTransport` 请求级动态代理解析，每次请求实时获取代理端点
+- **Jina Reader 不再依赖 proxy.enabled**：配置 `jina.api_key` 即可启用，代理由系统自动检测
+- **全局限流重试**：所有 HTTP 客户端自动处理 429 限流，读取 `Retry-After` 头等待后重试一次（最大等待 5s，超限直接返回 429）
+- **arXiv 引擎限流**：内置 1 req/s 限流器（arXiv 官方建议），超限时等待而非触发 429
+
+### 变更
+- **引擎初始化逻辑重构**：Google、Semantic Scholar、Google Scholar 始终初始化（除非各自 `disable_*` 显式禁用），代理在请求级别动态解析，开关代理无需重启
+- **Jina Reader 去除 proxy.enabled 门控**：`NewFromConfig` 仅检查 `jina.api_key`，代理由 `ProxyResolver` 动态解析
+- **Google 引擎 HTTP 客户端**：从静态 `http.ProxyURL` 改为 `DynamicProxyTransport`，请求时实时解析代理
+- **学术引擎 HTTP 客户端**：从 `proxy.NewHTTPClient(endpoint)` 改为 `proxy.NewDynamicHTTPClient(resolver)`，支持运行时代理切换；国内引擎也使用带 retry 的客户端
+- **测试 URL 更新**：`TestFetchWebPage` / `TestCleanFetch_WebFetchSuccess` 测试 URL 从 `arthurchiao.art`（已不可达）更换为 `wmyskxz.cn`
+
+### 向后兼容
+- `proxy.enabled: true` + `proxy.endpoint` 仍正常工作（显式代理模式）
+- `proxy.enabled: false` 仍正常工作（显式禁用代理）
+- 未设置 `proxy.enabled` 时行为变更：从"不使用代理"变为"自动检测系统代理"
+
+### 新增文件
+- `pkg/proxy/sysproxy.go` — 系统代理检测核心逻辑
+- `pkg/proxy/sysproxy_windows.go` — Windows 注册表 + WinHTTP 检测实现
+- `pkg/proxy/sysproxy_other.go` — 非 Windows 平台占位（仅环境变量）
+- `pkg/proxy/detector.go` — 后台代理变更检测器
+
 ## v2.4.0 — 2026-06-02
 
 ### 新增

@@ -57,16 +57,13 @@ func NewReader(apiKey, baseURL string, httpClient *http.Client) *Reader {
 }
 
 // NewFromConfig 根据配置创建 Jina Reader。
-// 需要同时配置 API Key 和启用代理，否则返回 nil。
+// 需要配置 API Key，否则返回 nil。
+// 代理由 resolver 在请求时动态解析。
 func NewFromConfig(jinaConf config.JinaConfig, proxyConf config.ProxyConfig) *Reader {
 	if jinaConf.APIKey == "" {
 		return nil
 	}
-	if !proxyConf.Enabled {
-		log.Info("Jina Reader 未启用：需要开启代理 (proxy.enabled=true)")
-		return nil
-	}
-	httpClient := proxy.NewHTTPClient(proxyConf.GetProxyEndpoint(), 30*time.Second)
+	httpClient := proxy.NewDynamicHTTPClient(proxyConf.ProxyResolver(), 30*time.Second)
 	return NewReader(jinaConf.APIKey, jinaConf.BaseURL, httpClient)
 }
 

@@ -79,13 +79,14 @@ academic:
 
 # ==============================================
 # 代理配置
-# 学术引擎：Semantic Scholar、Google Scholar 需要代理才能访问
-# Jina Reader (cleanfetch)：需要代理才能访问 r.jina.ai
-# Google 搜索引擎：需要代理才能访问
+# 默认自动检测系统代理（Windows 注册表 / 环境变量）。
+# Clash、V2RayN 等代理软件开启系统代理后，Google、Semantic Scholar、
+# Google Scholar、Jina Reader 等工具自动通过代理访问，无需手动配置。
+# 显式设置 enabled: false 可完全禁用代理。
 # ==============================================
 proxy:
-  enabled: false # 是否启用（默认 false，启用后才会初始化海外引擎、Google 搜索和 cleanfetch 工具）
-  endpoint: "http://127.0.0.1:7897" # 代理端点（默认 7897）
+  enabled: false # 留空或不设则自动检测系统代理；显式 true 使用 endpoint；显式 false 禁用
+  endpoint: "http://127.0.0.1:7897" # 代理端点（仅 enabled: true 时生效，默认 7897）
 
 # ==============================================
 # LLM 配置（可选，用于搜索摘要生成）
@@ -104,8 +105,9 @@ cache:
   cleanup_interval: 30
 
 # ==============================================
-# Jina Reader 配置（可选，用于 cleanfetch 工具）
-# 需要同时开启代理 (proxy.enabled=true) 才能使用
+# Jina Reader 配置（可选，用于 cleanfetch 工具回退）
+# 配置 API Key 后 cleanfetch 抓取失败时自动回退 Jina Reader
+# 代理自动检测，无需显式开启
 # 获取 API Key: https://jina.ai/reader/
 # ==============================================
 # jina:

@@ -15,11 +15,12 @@ type SearchGroup struct {
 	Primary  SearchInf          // 主搜索引擎
 	Fallback *BingSearchAdapter // Bing 兜底引擎（可为 nil）
 	Academic AcademicSearcher   // 学术搜索引擎（可为 nil）
+	conf     config.Config      // 保存配置，用于代理变更时重建引擎
 }
 
 // NewFromConfig 根据配置初始化搜索引擎组。
 func NewFromConfig(conf config.Config) (*SearchGroup, error) {
-	g := &SearchGroup{}
+	g := &SearchGroup{conf: conf}
 
 	// ── 初始化 Bing 引擎（兜底） ──
 	initBingEngine(conf, g)
@@ -27,7 +28,7 @@ func NewFromConfig(conf config.Config) (*SearchGroup, error) {
 	// ── 初始化百度网页搜索引擎（无需 API Key，SK 失败时回退） ──
 	baiduWebAdapter := initBaiduWebEngine(conf)
 
-	// ── 初始化 Google 引擎（需代理） ──
+	// ── 初始化 Google 引擎（需代理，由 resolver 动态解析） ──
 	googleAdapter := initGoogleEngine(conf)
 
 	// ── 按模式选择主引擎 ──
@@ -130,21 +131,23 @@ func initBaiduWebEngine(conf config.Config) *EngineSearchAdapter {
 	return adapter
 }
 
-// initGoogleEngine 初始化 Google 引擎（仅在代理启用时可用）。
+// initGoogleEngine 初始化 Google 引擎。
+// 始终初始化，代理端点由 resolver 在每次请求时动态解析。
 func initGoogleEngine(conf config.Config) *EngineSearchAdapter {
-	if !conf.Proxy.Enabled {
-		return nil
-	}
 	blocked := bing.MergeBlocked(conf.BlackListHost, nil)
 	eng := google.NewGoogle(google.GoogleOpts{
-		Enabled:       true,
-		Blocked:       blocked,
-		ProxyEndpoint: conf.Proxy.GetProxyEndpoint(),
-		PerSec:        conf.GetRateLimitPerSec(),
-		PerMin:        conf.GetRateLimitPerMin(),
+		Enabled:      true,
+		Blocked:      blocked,
+		ProxyResolve: conf.Proxy.ProxyResolver(),
+		PerSec:       conf.GetRateLimitPerSec(),
+		PerMin:       conf.GetRateLimitPerMin(),
 	})
 	adapter := NewEngineSearchAdapter("google", eng)
-	log.Infof("Google 引擎已启用（代理: %s）", conf.Proxy.GetProxyEndpoint())
+	if conf.Proxy.ProxyResolver() != nil {
+		log.Info("Google 引擎已启用（代理: 自动检测）")
+	} else {
+		log.Info("Google 引擎已启用（直连）")
+	}
 	return adapter
 }
 
@@ -167,6 +170,7 @@ func initBingEngine(conf config.Config, g *SearchGroup) {
 }
 
 // initAcademicEngine 根据配置初始化学术搜索引擎。
+// 始终初始化所有未显式禁用的引擎，代理端点由 resolver 在每次请求时动态解析。
 func initAcademicEngine(conf config.Config, g *SearchGroup) {
 	acad := conf.Academic
 	if !acad.Enabled {
@@ -179,11 +183,6 @@ func initAcademicEngine(conf config.Config, g *SearchGroup) {
 		network = antirobot.RegionInternational
 	}
 
-	proxyEndpoint := ""
-	if conf.Proxy.Enabled {
-		proxyEndpoint = conf.Proxy.GetProxyEndpoint()
-	}
-
 	acadConf := AcademicConfig{
 		Network:         network,
 		Arxiv:           antirobot.ArxivOpts{Enabled: !acad.DisableArxiv},
@@ -192,7 +191,7 @@ func initAcademicEngine(conf config.Config, g *SearchGroup) {
 		SemanticScholar: antirobot.SemanticScholarOpts{Enabled: !acad.DisableSemanticScholar},
 		PubMed:          antirobot.PubMedOpts{Enabled: !acad.DisablePubMed},
 		GoogleScholar:   antirobot.GoogleScholarOpts{Enabled: !acad.DisableGoogleScholar},
-		Proxy:           proxyEndpoint,
+		ProxyResolve:    conf.Proxy.ProxyResolver(),
 	}
 
 	adapter := NewAcademicAdapter(acadConf)

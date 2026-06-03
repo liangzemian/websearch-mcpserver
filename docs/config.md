@@ -45,13 +45,13 @@ academic:
   disable_crossref: false
   disable_openalex: false
   disable_pubmed: false
-  disable_semantic_scholar: true    # 需代理
-  disable_google_scholar: true      # 需代理
+  disable_semantic_scholar: true    # 默认禁用（开启后自动通过代理访问）
+  disable_google_scholar: true      # 默认禁用（开启后自动通过代理访问）
 
-# 代理（仅海外学术引擎）
+# 代理（默认自动检测系统代理，无需手动配置）
 proxy:
-  enabled: false
-  endpoint: "http://127.0.0.1:7897"
+  enabled: false          # 留空→自动检测；true→使用 endpoint；false→禁用
+  endpoint: "http://127.0.0.1:7897"  # 仅 enabled: true 时生效
 
 # LLM 摘要（可选）
 llm:
@@ -64,9 +64,9 @@ cache:
   storage_path: "./data/search_cache.db"
   cleanup_interval: 30      # 清理间隔（分钟），最大 360
 
-# Jina Reader（可选，启用 cleanfetch 工具）
+# Jina Reader（可选，cleanfetch 失败时回退）
 jina:
-  api_key: ""               # 留空则 cleanfetch 不注册
+  api_key: ""               # 留空则不启用 Jina 回退
   base_url: ""              # 默认 https://r.jina.ai
 
 # 增强型网页抓取（默认关闭）
@@ -111,8 +111,8 @@ log:
 | `bing.per_min` | 20 | |
 | `academic.enabled` | true | |
 | `academic.bing_fallback` | true | |
-| `proxy.enabled` | false | 启用后才初始化海外引擎 |
-| `proxy.endpoint` | `http://127.0.0.1:7897` | |
+| `proxy.enabled` | false | 未设置时自动检测系统代理；显式 false 禁用 |
+| `proxy.endpoint` | `http://127.0.0.1:7897` | 仅 `enabled: true` 时生效 |
 | `cleanfetch.enabled` | false | 旧配置不启用，需显式开启 |
 | `cleanfetch.file_ttl_hours` | 24 | |
 | `cleanfetch.max_inline_lines` | 100 | |

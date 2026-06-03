@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"websearch/pkg/antirobot"
+	"websearch/pkg/proxy"
 )
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -17,15 +18,20 @@ import (
 // ──────────────────────────────────────────────────────────────────────────────
 
 type arxivEngine struct {
-	client *http.Client
+	client  *http.Client
+	limiter *antirobot.RateLimiter
 }
 
-// NewArxiv 创建 arXiv 引擎。client 为 nil 时使用默认客户端。
+// NewArxiv 创建 arXiv 引擎。client 为 nil 时使用带限流重试的默认客户端。
+// arXiv 官方建议每秒不超过 1 次请求，超出返回 429。
 func NewArxiv(_ antirobot.ArxivOpts, client *http.Client) antirobot.Engine {
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = proxy.NewDynamicHTTPClient(nil, 15*time.Second)
 	}
-	return &arxivEngine{client: client}
+	return &arxivEngine{
+		client:  client,
+		limiter: antirobot.NewRateLimiter(1, 20), // 1/s, 20/min
+	}
 }
 
 func (e *arxivEngine) Name() string                    { return "arxiv" }
@@ -37,6 +43,11 @@ func (e *arxivEngine) Search(query string, page int, timeRange antirobot.TimeRan
 		offset = 0
 	}
 
+	// 限流等待：arXiv 官方建议不超过 1 req/s
+	for !e.limiter.Allow() {
+		time.Sleep(500 * time.Millisecond)
+	}
+
 	q := "all:" + query
 	if since := antirobot.TimeRangeSince(timeRange); since != "" {
 		q += " AND submittedDate:[" + since + " TO *]"
@@ -45,7 +56,12 @@ func (e *arxivEngine) Search(query string, page int, timeRange antirobot.TimeRan
 	u := fmt.Sprintf("https://export.arxiv.org/api/query?search_query=%s&start=%d&max_results=10",
 		url.QueryEscape(q), offset)
 
-	resp, err := e.client.Get(u)
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("arxiv request: %w", err)
+	}
+
+	resp, err := e.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("arxiv request: %w", err)
 	}

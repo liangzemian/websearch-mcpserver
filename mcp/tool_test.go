@@ -54,7 +54,7 @@ func TestCleanFetch_WebFetchSuccess(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	result, _, err := CleanFetch(ctx, nil, &CleanFetchParams{URL: "https://arthurchiao.art/blog/k8s-scheduling-plugins-zh/"})
+	result, _, err := CleanFetch(ctx, nil, &CleanFetchParams{URL: "https://wmyskxz.cn/weekly/177/"})
 	if err != nil {
 		t.Fatalf("CleanFetch failed: %v", err)
 	}

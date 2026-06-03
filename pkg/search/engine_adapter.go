@@ -82,3 +82,8 @@ func (a *EngineSearchAdapter) MergeContent(query string, results []SearchResult)
 func (a *EngineSearchAdapter) Engines() []string {
 	return a.searcher.Engines()
 }
+
+// Name 返回引擎适配器名称。
+func (a *EngineSearchAdapter) Name() string {
+	return a.name
+}

@@ -30,7 +30,7 @@ func TestFetchWebPage(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	result, err := fetcher.Fetch(ctx, "https://arthurchiao.art/blog/k8s-scheduling-plugins-zh/")
+	result, err := fetcher.Fetch(ctx, "https://wmyskxz.cn/weekly/177/")
 	if err != nil {
 		t.Fatalf("Fetch failed: %v", err)
 	}

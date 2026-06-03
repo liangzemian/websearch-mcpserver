@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"websearch/pkg/proxy"
+
 	"github.com/spf13/viper"
 )
 
@@ -94,18 +96,63 @@ type PDFParserConfig struct {
 }
 
 // ── 代理配置 ──
+// 默认自动检测系统代理（读取 Windows 注册表 / 环境变量）。
+// Clash、V2rayN 等代理软件开启系统代理后无需手动配置即可生效。
+// 显式设置 enabled: false 可关闭代理；显式设置 enabled: true 使用 endpoint。
 
 type ProxyConfig struct {
-	Enabled  bool   `mapstructure:"enabled"`  // 是否启用代理（默认 false）
-	Endpoint string `mapstructure:"endpoint"` // 代理地址（默认 http://127.0.0.1:7897）
+	Enabled      bool   `mapstructure:"enabled"`  // 显式启用代理（默认 false，未设置时自动检测）
+	Endpoint     string `mapstructure:"endpoint"` // 代理地址（默认 http://127.0.0.1:7897")
+	autoDisabled bool   // Load() 中设置：用户显式 enabled: false 时为 true，跳过自动检测
 }
 
-// GetProxyEndpoint 返回代理端点地址，未配置时返回默认值。
+// GetProxyEndpoint 返回代理端点地址。
+// 显式 enabled: true 时返回配置的 endpoint；
+// 显式 enabled: false 时返回空字符串（禁用代理）；
+// 未显式设置时自动检测系统代理，检测到则返回代理地址，否则返回空字符串。
 func (c ProxyConfig) GetProxyEndpoint() string {
-	if c.Endpoint != "" {
-		return c.Endpoint
+	// 显式禁用
+	if c.autoDisabled {
+		return ""
 	}
-	return "http://127.0.0.1:7897"
+	// 显式启用，使用配置的 endpoint
+	if c.Enabled {
+		if c.Endpoint != "" {
+			return c.Endpoint
+		}
+		return "http://127.0.0.1:7897"
+	}
+	// 未显式设置 → 自动检测系统代理
+	if ep := proxy.DetectSystemProxy(); ep != "" {
+		return ep
+	}
+	return ""
+}
+
+// ProxyResolver 返回动态代理解析函数。
+// 每次请求时实时获取当前代理端点，支持运行时代理开关切换。
+// 显式禁用时返回 nil；显式启用时返回固定端点；未设置时返回自动检测函数。
+func (c ProxyConfig) ProxyResolver() proxy.ProxyResolver {
+	// 显式禁用
+	if c.autoDisabled {
+		return nil
+	}
+	// 显式启用，返回固定端点
+	if c.Enabled {
+		ep := c.Endpoint
+		if ep == "" {
+			ep = "http://127.0.0.1:7897"
+		}
+		return func() string { return ep }
+	}
+	// 未显式设置 → 返回自动检测函数（每次请求实时解析）
+	return func() string { return proxy.DetectSystemProxy() }
+}
+
+// NeedsProxy 返回是否需要初始化代理相关引擎。
+// 显式 enabled: false 时不需要；其他情况始终初始化（由 resolver 在请求时决定是否走代理）。
+func (c ProxyConfig) NeedsProxy() bool {
+	return !c.autoDisabled
 }
 
 // ── 其他子配置 ──
@@ -275,6 +322,11 @@ func Load(configPath string) (*Config, error) {
 	}
 	if conf.CleanFetch.MaxInlineLines <= 0 {
 		conf.CleanFetch.MaxInlineLines = 100
+	}
+
+	// 代理：标记用户显式禁用（enabled: false），跳过自动检测
+	if viper.IsSet("proxy.enabled") && !viper.GetBool("proxy.enabled") {
+		conf.Proxy.autoDisabled = true
 	}
 
 	return &conf, nil

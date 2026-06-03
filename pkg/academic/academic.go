@@ -8,7 +8,7 @@ import (
 )
 
 // BuildAcademic 根据配置创建学术搜索引擎列表。
-// proxyEndpoint 非空时，仅对 RegionInternational 引擎启用代理。
+// ProxyResolve 非 nil 时，对 RegionInternational 引擎使用动态代理。
 func BuildAcademic(opts struct {
 	Network         antirobot.NetworkRegion
 	Arxiv           antirobot.ArxivOpts
@@ -17,29 +17,31 @@ func BuildAcademic(opts struct {
 	SemanticScholar antirobot.SemanticScholarOpts
 	PubMed          antirobot.PubMedOpts
 	GoogleScholar   antirobot.GoogleScholarOpts
-	Proxy           string // 代理端点，如 http://127.0.0.1:7897
+	ProxyResolve    proxy.ProxyResolver // 代理端点动态解析函数
 }) []antirobot.Engine {
 	var engines []antirobot.Engine
 
-	// 国内引擎：不走代理
+	// 国内引擎：不走代理，但带 429 Retry-After 自动重试
+	directClient := proxy.NewDynamicHTTPClient(nil, 15*time.Second)
+
 	if opts.Crossref.Enabled && opts.Network >= antirobot.RegionChina {
-		engines = append(engines, NewCrossref(opts.Crossref, nil))
+		engines = append(engines, NewCrossref(opts.Crossref, directClient))
 	}
 	if opts.OpenAlex.Enabled && opts.Network >= antirobot.RegionChina {
-		engines = append(engines, NewOpenAlex(opts.OpenAlex, nil))
+		engines = append(engines, NewOpenAlex(opts.OpenAlex, directClient))
 	}
 	if opts.PubMed.Enabled && opts.Network >= antirobot.RegionChina {
-		engines = append(engines, NewPubMed(opts.PubMed, nil))
+		engines = append(engines, NewPubMed(opts.PubMed, directClient))
 	}
 
 	// 国内引擎：arXiv 国内可直连
 	if opts.Arxiv.Enabled && opts.Network >= antirobot.RegionChina {
-		engines = append(engines, NewArxiv(opts.Arxiv, nil))
+		engines = append(engines, NewArxiv(opts.Arxiv, directClient))
 	}
 
-	// 国际引擎：Semantic Scholar 和 Google Scholar 仅在配置代理时启用（国内无代理不可达）
-	if opts.Proxy != "" {
-		intlClient := proxy.NewHTTPClient(opts.Proxy, 15*time.Second)
+	// 国际引擎：Semantic Scholar 和 Google Scholar 通过动态代理客户端访问
+	if opts.ProxyResolve != nil {
+		intlClient := proxy.NewDynamicHTTPClient(opts.ProxyResolve, 15*time.Second)
 		if opts.SemanticScholar.Enabled && opts.Network >= antirobot.RegionInternational {
 			engines = append(engines, NewSemanticScholar(opts.SemanticScholar, intlClient))
 		}

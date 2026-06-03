@@ -9,6 +9,7 @@ import (
 
 	"websearch/pkg/academic"
 	"websearch/pkg/antirobot"
+	"websearch/pkg/proxy"
 	md "websearch/pkg/xml"
 )
 
@@ -32,7 +33,7 @@ type AcademicConfig struct {
 	SemanticScholar antirobot.SemanticScholarOpts
 	PubMed          antirobot.PubMedOpts
 	GoogleScholar   antirobot.GoogleScholarOpts
-	Proxy           string // 代理端点
+	ProxyResolve    proxy.ProxyResolver // 代理端点动态解析函数
 }
 
 // NewAcademicAdapter 创建学术搜索适配器。
@@ -45,7 +46,7 @@ func NewAcademicAdapter(conf AcademicConfig) *AcademicAdapter {
 		SemanticScholar antirobot.SemanticScholarOpts
 		PubMed          antirobot.PubMedOpts
 		GoogleScholar   antirobot.GoogleScholarOpts
-		Proxy           string
+		ProxyResolve    proxy.ProxyResolver
 	}{
 		Network:         conf.Network,
 		Arxiv:           conf.Arxiv,
@@ -54,7 +55,7 @@ func NewAcademicAdapter(conf AcademicConfig) *AcademicAdapter {
 		SemanticScholar: conf.SemanticScholar,
 		PubMed:          conf.PubMed,
 		GoogleScholar:   conf.GoogleScholar,
-		Proxy:           conf.Proxy,
+		ProxyResolve:    conf.ProxyResolve,
 	})
 
 	if len(engines) == 0 {

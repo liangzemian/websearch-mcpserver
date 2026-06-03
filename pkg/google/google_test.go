@@ -342,7 +342,7 @@ func TestFilterBlocked(t *testing.T) {
 }
 
 func TestNewGoogle(t *testing.T) {
-	e := NewGoogle(GoogleOpts{Enabled: true, ProxyEndpoint: "http://127.0.0.1:7897"})
+	e := NewGoogle(GoogleOpts{Enabled: true, ProxyResolve: func() string { return "http://127.0.0.1:7897" }})
 	if e.Name() != "google" {
 		t.Errorf("name = %q, want google", e.Name())
 	}
@@ -404,8 +404,8 @@ func TestGoogleSearch(t *testing.T) {
 
 	proxyEndpoint := "http://127.0.0.1:7897"
 	engine := NewGoogle(GoogleOpts{
-		Enabled:       true,
-		ProxyEndpoint: proxyEndpoint,
+		Enabled:      true,
+		ProxyResolve: func() string { return proxyEndpoint },
 	})
 
 	resp, err := engine.Search("golang concurrency", 1, antirobot.TimeRangeNone)
@@ -441,7 +441,7 @@ func TestGoogleSearch_NoProxy(t *testing.T) {
 	}
 
 	// 无代理应超时或连接失败
-	engine := NewGoogle(GoogleOpts{Enabled: true, ProxyEndpoint: ""})
+	engine := NewGoogle(GoogleOpts{Enabled: true, ProxyResolve: nil})
 	_, err := engine.Search("test", 1, antirobot.TimeRangeNone)
 	// 无代理时 Google 在国内不可达，应该报错
 	if err == nil {
