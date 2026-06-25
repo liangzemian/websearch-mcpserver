@@ -302,10 +302,10 @@ func TestBaiduSearch_TimeRange(t *testing.T) {
 	}
 	t.Logf("Results with time range: %d", len(resp.Results))
 
-	// 验证 URL 包含 gpc 参数
+	// 验证 URL 包含 gpc 参数（= 在 URL 中编码为 %3D）
 	e := engine.(*baiduEngine)
 	u := e.buildURL("人工智能", 1, antirobot.TimeRangeWeek)
-	if !strings.Contains(u, "gpc=stf=") {
+	if !strings.Contains(u, "gpc=stf") {
 		t.Errorf("URL should contain gpc parameter for time range, got: %s", u)
 	}
 }

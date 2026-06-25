@@ -49,6 +49,7 @@ func applySearchEngine(conf config.Config) {
 	searchapi = g.Primary
 	fallbackSearch = g.Fallback
 	academicSearcher = g.Academic
+	smartSearchConf = conf.SmartSearch
 }
 
 func applySummarizer(conf config.Config) {

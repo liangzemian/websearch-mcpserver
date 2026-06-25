@@ -8,6 +8,7 @@ import (
 )
 
 type TavilySearchImpl struct {
+	name           string
 	apiKey         string
 	includeDomains []string
 	excludeDomains []string
@@ -33,6 +34,7 @@ type tavilySearchResp struct {
 
 func NewTavilySearch(apiKey string, excludeDomains []string) *TavilySearchImpl {
 	return &TavilySearchImpl{
+		name:           "tavily_api",
 		apiKey:         apiKey,
 		excludeDomains: excludeDomains,
 	}
@@ -41,11 +43,14 @@ func NewTavilySearch(apiKey string, excludeDomains []string) *TavilySearchImpl {
 // NewTavilySearchWithDomains 创建支持限定域名的 Tavily 搜索实例。
 func NewTavilySearchWithDomains(apiKey string, includeDomains, excludeDomains []string) *TavilySearchImpl {
 	return &TavilySearchImpl{
+		name:           "tavily_api",
 		apiKey:         apiKey,
 		includeDomains: includeDomains,
 		excludeDomains: excludeDomains,
 	}
 }
+
+func (t *TavilySearchImpl) Name() string { return t.name }
 
 func (t *TavilySearchImpl) Search(query string) (string, error) {
 	results, err := t.SearchRaw(query)
@@ -92,6 +97,8 @@ func (t *TavilySearchImpl) SearchRaw(query string) ([]SearchResult, error) {
 			Title:   val.Title,
 			Url:     strings.TrimSpace(val.URL),
 			Content: val.Content,
+			Score:   val.Score,
+			Engine:  t.name,
 		})
 	}
 	return ret, nil
@@ -108,7 +115,11 @@ func (t *TavilySearchImpl) MergeContent(query string, results []SearchResult) (s
 	buf.Grow(1024 * len(results))
 	buf.WriteString(md.MDSearchHeader(query, len(results)))
 	for i, val := range results {
-		buf.WriteString(md.FormatMD(i+1, val.Title, val.Url, val.Content))
+		if ShowMeta {
+			buf.WriteString(md.FormatMDScore(i+1, val.Title, val.Url, val.Engine, formatScore(val.Score), val.Content))
+		} else {
+			buf.WriteString(md.FormatMD(i+1, val.Title, val.Url, val.Content))
+		}
 	}
 	return buf.String(), nil
 

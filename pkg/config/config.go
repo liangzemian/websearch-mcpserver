@@ -38,9 +38,10 @@ type Config struct {
 	Log           LogConfig        `mapstructure:"log"`
 	Bing          BingConfig       `mapstructure:"bing"`
 	Academic      AcademicConfig   `mapstructure:"academic"`
-	CleanFetch    CleanFetchConfig `mapstructure:"cleanfetch"`
-	PDFParser     PDFParserConfig  `mapstructure:"pdf_parser"`
-	Proxy         ProxyConfig      `mapstructure:"proxy"`
+	CleanFetch    CleanFetchConfig   `mapstructure:"cleanfetch"`
+	PDFParser     PDFParserConfig    `mapstructure:"pdf_parser"`
+	Proxy         ProxyConfig        `mapstructure:"proxy"`
+	SmartSearch   SmartSearchConfig  `mapstructure:"smartsearch"`
 }
 
 // ── 各搜索引擎配置 ──
@@ -177,6 +178,19 @@ type JinaConfig struct {
 type LogConfig struct {
 	MaxSize int `mapstructure:"max_size"` // 单个日志文件最大大小（MB），默认 1
 	MaxAge  int `mapstructure:"max_age"`  // 日志保留天数，默认 1
+}
+
+// SmartSearchConfig smartsearch 工具高级配置。
+type SmartSearchConfig struct {
+	MaxSize int                          `mapstructure:"max_size"`  // 全局最大结果数（按 score 排序后截断），0 = 不限
+	ShowMeta bool                        `mapstructure:"show_meta"` // 输出中是否显示引擎来源和 score（默认 true）
+	Engines  map[string]SmartSearchEngine `mapstructure:"engines"`   // 按引擎名配置
+}
+
+// SmartSearchEngine 单引擎的 smartsearch 配置。
+type SmartSearchEngine struct {
+	MinScore float64 `mapstructure:"min_score"` // 最低相关性分数阈值，0 = 不过滤；引擎不支持 score 时忽略
+	MaxSize  int     `mapstructure:"max_size"`  // 单引擎最大结果数，0 = 使用默认值 4
 }
 
 // ── Config 方法 ──
@@ -331,6 +345,11 @@ func Load(configPath string) (*Config, error) {
 	// 代理：标记用户显式禁用（enabled: false），跳过自动检测
 	if viper.IsSet("proxy.enabled") && !viper.GetBool("proxy.enabled") {
 		conf.Proxy.autoDisabled = true
+	}
+
+	// SmartSearch 默认值
+	if !viper.IsSet("smartsearch.show_meta") {
+		conf.SmartSearch.ShowMeta = true // 默认显示引擎来源和 score
 	}
 
 	return &conf, nil

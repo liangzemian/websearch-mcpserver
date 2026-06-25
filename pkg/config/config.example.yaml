@@ -79,13 +79,14 @@ academic:
 
 # ==============================================
 # 代理配置
-# 学术引擎：Semantic Scholar、Google Scholar 需要代理才能访问
-# Jina Reader (cleanfetch)：需要代理才能访问 r.jina.ai
-# Google 搜索引擎：需要代理才能访问
+# 默认自动检测系统代理（Windows 注册表 / 环境变量）。
+# Clash、V2RayN 等代理软件开启系统代理后，Google、Semantic Scholar、
+# Google Scholar、Jina Reader 等工具自动通过代理访问，无需手动配置。
+# 显式设置 enabled: false 可完全禁用代理。
 # ==============================================
 proxy:
-  enabled: false # 是否启用（默认 false，启用后才会初始化海外引擎、Google 搜索和 cleanfetch 工具）
-  endpoint: "http://127.0.0.1:7897" # 代理端点（默认 7897）
+  enabled: false # 留空或不设则自动检测系统代理；显式 true 使用 endpoint；显式 false 禁用
+  endpoint: "http://127.0.0.1:7897" # 代理端点（仅 enabled: true 时生效，默认 7897）
 
 # ==============================================
 # LLM 配置（可选，用于搜索摘要生成）
@@ -104,8 +105,9 @@ cache:
   cleanup_interval: 30
 
 # ==============================================
-# Jina Reader 配置（可选，用于 cleanfetch 工具）
-# 需要同时开启代理 (proxy.enabled=true) 才能使用
+# Jina Reader 配置（可选，用于 cleanfetch 工具回退）
+# 配置 API Key 后 cleanfetch 抓取失败时自动回退 Jina Reader
+# 代理自动检测，无需显式开启
 # 获取 API Key: https://jina.ai/reader/
 # ==============================================
 # jina:
@@ -138,3 +140,27 @@ pdf_parser:
 log:
   max_size: 1 # 单个日志文件最大 MB（默认 1）
   max_age: 1 # 保留天数（默认 1）
+
+# ==============================================
+# SmartSearch 工具高级配置（可选）
+# 控制搜索结果的 score 过滤、截断和输出格式
+# ==============================================
+# smartsearch:
+#   max_size: 10          # 全局最大结果数（按 score 排序后截断），0 = 不限
+#   show_meta: true       # 输出中是否显示引擎来源和相关性分数（默认 true）
+#   engines:              # 按引擎名配置（引擎名: tavily_api, bing, baidu_api, baidu, google）
+#     tavily_api:
+#       min_score: 0.5    # Tavily API 最低相关性分数阈值（0 = 不过滤）
+#       max_size: 6       # Tavily API 单引擎最大结果数（默认 4）
+#     bing:
+#       min_score: 0      # Bing 不回传 score，此字段无效
+#       max_size: 4       # Bing 单引擎最大结果数
+#     baidu_api:
+#       min_score: 0      # 百度千帆 API 不回传 score，此字段无效
+#       max_size: 5       # 百度千帆 API 单引擎最大结果数
+#     baidu:
+#       min_score: 0      # 百度网页搜索不回传 score，此字段无效
+#       max_size: 5       # 百度网页搜索单引擎最大结果数
+#     google:
+#       min_score: 0      # Google 不回传 score，此字段无效
+#       max_size: 4       # Google 单引擎最大结果数

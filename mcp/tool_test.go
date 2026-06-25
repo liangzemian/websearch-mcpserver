@@ -8,6 +8,7 @@ import (
 
 	"websearch/pkg/config"
 	"websearch/pkg/jina"
+	"websearch/pkg/search"
 	"websearch/pkg/webfetch"
 )
 
@@ -169,5 +170,149 @@ func TestPDFParserHandler_NotInitialized(t *testing.T) {
 	_, _, err := PDFParserHandler(context.Background(), nil, &PDFParserParams{Path: "/tmp/test.pdf"})
 	if err == nil {
 		t.Fatal("expected error when webfetch not initialized")
+	}
+}
+
+// ── postSearchFilter 测试 ────────────────────────────────────────────────────
+
+func TestPostSearchFilter_Empty(t *testing.T) {
+	old := smartSearchConf
+	smartSearchConf = config.SmartSearchConfig{}
+	defer func() { smartSearchConf = old }()
+
+	out := postSearchFilter(nil, "bing")
+	if len(out) != 0 {
+		t.Fatalf("expected 0, got %d", len(out))
+	}
+}
+
+func TestPostSearchFilter_ScoreFilter(t *testing.T) {
+	old := smartSearchConf
+	smartSearchConf = config.SmartSearchConfig{
+		Engines: map[string]config.SmartSearchEngine{
+			"tavily_api": {MinScore: 0.5},
+		},
+	}
+	defer func() { smartSearchConf = old }()
+
+	results := []search.SearchResult{
+		{Title: "high", Score: 0.9, Engine: "tavily_api"},
+		{Title: "low", Score: 0.2, Engine: "tavily_api"},
+		{Title: "mid", Score: 0.6, Engine: "tavily_api"},
+	}
+	out := postSearchFilter(results, "tavily_api")
+	if len(out) != 2 {
+		t.Fatalf("expected 2, got %d", len(out))
+	}
+}
+
+func TestPostSearchFilter_NoScore_IgnoresMinScore(t *testing.T) {
+	old := smartSearchConf
+	smartSearchConf = config.SmartSearchConfig{
+		Engines: map[string]config.SmartSearchEngine{
+			"bing": {MinScore: 0.9},
+		},
+	}
+	defer func() { smartSearchConf = old }()
+
+	results := []search.SearchResult{
+		{Title: "b1", Score: 0, Engine: "bing"},
+		{Title: "b2", Score: 0, Engine: "bing"},
+	}
+	out := postSearchFilter(results, "bing")
+	if len(out) != 2 {
+		t.Fatalf("no-score engine should ignore minScore, got %d", len(out))
+	}
+}
+
+func TestPostSearchFilter_PerEngineMaxSize(t *testing.T) {
+	old := smartSearchConf
+	smartSearchConf = config.SmartSearchConfig{
+		Engines: map[string]config.SmartSearchEngine{
+			"bing": {MaxSize: 2},
+		},
+	}
+	defer func() { smartSearchConf = old }()
+
+	results := []search.SearchResult{
+		{Title: "b1", Score: 0, Engine: "bing"},
+		{Title: "b2", Score: 0, Engine: "bing"},
+		{Title: "b3", Score: 0, Engine: "bing"},
+		{Title: "b4", Score: 0, Engine: "bing"},
+		{Title: "b5", Score: 0, Engine: "bing"},
+	}
+	out := postSearchFilter(results, "bing")
+	if len(out) != 2 {
+		t.Fatalf("expected 2 (per-engine max), got %d", len(out))
+	}
+}
+
+func TestPostSearchFilter_GlobalMaxSize_NoScore(t *testing.T) {
+	old := smartSearchConf
+	smartSearchConf = config.SmartSearchConfig{
+		MaxSize: 3,
+		Engines: map[string]config.SmartSearchEngine{
+			"bing": {MaxSize: 10},
+		},
+	}
+	defer func() { smartSearchConf = old }()
+
+	results := []search.SearchResult{
+		{Title: "b1", Score: 0, Engine: "bing"},
+		{Title: "b2", Score: 0, Engine: "bing"},
+		{Title: "b3", Score: 0, Engine: "bing"},
+		{Title: "b4", Score: 0, Engine: "bing"},
+	}
+	// no-score: perEngineCap = min(10, ceil(3/1)) = 3 → 3 results → global max 3
+	out := postSearchFilter(results, "bing")
+	if len(out) != 3 {
+		t.Fatalf("expected 3, got %d", len(out))
+	}
+}
+
+func TestPostSearchFilter_GlobalMaxSize_WithScore(t *testing.T) {
+	old := smartSearchConf
+	smartSearchConf = config.SmartSearchConfig{
+		MaxSize: 2,
+		Engines: map[string]config.SmartSearchEngine{
+			"tavily_api": {MaxSize: 10},
+		},
+	}
+	defer func() { smartSearchConf = old }()
+
+	results := []search.SearchResult{
+		{Title: "low", Score: 0.3, Engine: "tavily_api"},
+		{Title: "high", Score: 0.9, Engine: "tavily_api"},
+		{Title: "mid", Score: 0.6, Engine: "tavily_api"},
+	}
+	out := postSearchFilter(results, "tavily_api")
+	if len(out) != 2 {
+		t.Fatalf("expected 2, got %d", len(out))
+	}
+	// sorted by score: high(0.9), mid(0.6)
+	if out[0].Title != "high" || out[1].Title != "mid" {
+		t.Errorf("expected high,mid by score, got %s,%s", out[0].Title, out[1].Title)
+	}
+}
+
+func TestPostSearchFilter_DefaultMaxSize(t *testing.T) {
+	old := smartSearchConf
+	smartSearchConf = config.SmartSearchConfig{
+		Engines: map[string]config.SmartSearchEngine{
+			"bing": {}, // no MaxSize set → default 4
+		},
+	}
+	defer func() { smartSearchConf = old }()
+
+	results := []search.SearchResult{
+		{Title: "b1", Score: 0, Engine: "bing"},
+		{Title: "b2", Score: 0, Engine: "bing"},
+		{Title: "b3", Score: 0, Engine: "bing"},
+		{Title: "b4", Score: 0, Engine: "bing"},
+		{Title: "b5", Score: 0, Engine: "bing"},
+	}
+	out := postSearchFilter(results, "bing")
+	if len(out) != 4 {
+		t.Fatalf("expected 4 (default), got %d", len(out))
 	}
 }

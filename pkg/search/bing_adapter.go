@@ -40,6 +40,8 @@ func (a *BingSearchAdapter) SearchRaw(query string) ([]SearchResult, error) {
 	return a.doSearch(query)
 }
 
+func (a *BingSearchAdapter) Name() string { return "bing" }
+
 func (a *BingSearchAdapter) MergeContent(query string, results []SearchResult) (string, error) {
 	if len(results) == 0 {
 		return "", fmt.Errorf("没有搜索结果")
@@ -48,7 +50,11 @@ func (a *BingSearchAdapter) MergeContent(query string, results []SearchResult) (
 	buf.Grow(1024 * len(results))
 	buf.WriteString(md.MDSearchHeader(query, len(results)))
 	for i, val := range results {
-		buf.WriteString(md.FormatMD(i+1, val.Title, val.Url, val.Content))
+		if ShowMeta {
+			buf.WriteString(md.FormatMDScore(i+1, val.Title, val.Url, val.Engine, formatScore(val.Score), val.Content))
+		} else {
+			buf.WriteString(md.FormatMD(i+1, val.Title, val.Url, val.Content))
+		}
 	}
 	return buf.String(), nil
 }
@@ -84,6 +90,8 @@ func (a *BingSearchAdapter) doSearch(query string) ([]SearchResult, error) {
 			Url:         strings.TrimSpace(r.URL),
 			Content:     r.Content,
 			PublishDate: r.PublishedAt,
+			Score:       r.Score,
+			Engine:      "bing",
 		})
 	}
 	return results, nil

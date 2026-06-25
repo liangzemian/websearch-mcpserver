@@ -22,6 +22,9 @@ type SearchGroup struct {
 func NewFromConfig(conf config.Config) (*SearchGroup, error) {
 	g := &SearchGroup{conf: conf}
 
+	// ShowMeta 配置
+	ShowMeta = conf.SmartSearch.ShowMeta
+
 	// ── 初始化 Bing 引擎（兜底） ──
 	initBingEngine(conf, g)
 
@@ -50,7 +53,9 @@ func NewFromConfig(conf config.Config) (*SearchGroup, error) {
 		if len(engines) == 1 {
 			g.Primary = engines[0]
 		} else {
-			g.Primary = NewHybridSearch(engines...)
+			hs := NewHybridSearch(engines...)
+			applySmartSearchFilters(hs, conf)
+			g.Primary = hs
 		}
 		log.Infof("搜索模式: engine（无需 API Key，%d 个引擎并发）", len(engines))
 
@@ -87,7 +92,9 @@ func NewFromConfig(conf config.Config) (*SearchGroup, error) {
 		if len(engines) == 0 {
 			return nil, fmt.Errorf("无可用搜索引擎，请检查配置")
 		}
-		g.Primary = NewHybridSearch(engines...)
+		hs := NewHybridSearch(engines...)
+		applySmartSearchFilters(hs, conf)
+		g.Primary = hs
 
 	default: // baidu
 		if conf.Baidu.APIKey != "" {
@@ -126,7 +133,7 @@ func initBaiduWebEngine(conf config.Config) *EngineSearchAdapter {
 		PerSec:  conf.GetRateLimitPerSec(),
 		PerMin:  conf.GetRateLimitPerMin(),
 	})
-	adapter := NewEngineSearchAdapter("baidu_web", eng)
+	adapter := NewEngineSearchAdapter("baidu", eng)
 	log.Info("百度网页搜索引擎已启用（tn=json，无需 API Key）")
 	return adapter
 }
@@ -203,4 +210,23 @@ func initAcademicEngine(conf config.Config, g *SearchGroup) {
 	g.Academic = adapter
 	engines := adapter.Engines()
 	log.Infof("学术引擎已启用: %v", engines)
+}
+
+// applySmartSearchFilters 将 SmartSearchConfig 转换为 HybridSearchImpl 的过滤规则。
+func applySmartSearchFilters(hs *HybridSearchImpl, conf config.Config) {
+	sc := conf.SmartSearch
+	if sc.MaxSize > 0 {
+		hs.SetMaxSize(sc.MaxSize)
+	}
+	if len(sc.Engines) == 0 {
+		return
+	}
+	engineMap := make(map[string]engineFilter, len(sc.Engines))
+	for name, ec := range sc.Engines {
+		engineMap[name] = engineFilter{
+			minScore: ec.MinScore,
+			maxSize:  ec.MaxSize,
+		}
+	}
+	hs.SetFilters(engineMap)
 }

@@ -40,13 +40,14 @@ type CleanFetchParams struct {
 }
 
 var (
-	searchapi       search.SearchInf
-	fallbackSearch  *search.BingSearchAdapter
-	summarizerInst  *summarizer.Summarizer
-	cacheInst       *cache.Cache
-	jinaInst        *jina.Reader
-	webfetchInst    *webfetch.Fetcher
+	searchapi        search.SearchInf
+	fallbackSearch   *search.BingSearchAdapter
+	summarizerInst   *summarizer.Summarizer
+	cacheInst        *cache.Cache
+	jinaInst         *jina.Reader
+	webfetchInst     *webfetch.Fetcher
 	academicSearcher search.AcademicSearcher
+	smartSearchConf  config.SmartSearchConfig
 )
 
 // Init 初始化 MCP 服务组件，通过 Option 模式按需加载。
@@ -134,15 +135,22 @@ func doWebSearch(query, intent string) (*mcp.CallToolResult, any, error) {
 	}
 
 	// ---- 搜索 ----
+	engineName := searchapi.Name()
 	results, err := searchapi.SearchRaw(query)
 	if err != nil {
 		if fallbackSearch != nil && searchapi != fallbackSearch {
 			log.Errf("主搜索引擎失败(%v)，回退到 Bing 引擎", err)
 			results, err = fallbackSearch.SearchRaw(query)
+			engineName = "bing"
 		}
 		if err != nil {
 			return nil, nil, err
 		}
+	}
+
+	// 单引擎模式下应用 smartsearch 过滤（HybridSearchImpl 已在 SearchRaw 内处理）
+	if _, isHybrid := searchapi.(*search.HybridSearchImpl); !isHybrid {
+		results = postSearchFilter(results, engineName)
 	}
 
 	// 有 intent 且 LLM 可用 → 生成摘要
@@ -326,4 +334,49 @@ func formatWebFetchResult(result *webfetch.Result) *mcp.CallToolResult {
 		}
 	}
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: sb.String()}}}
+}
+
+// postSearchFilter 对单引擎搜索结果应用 smartsearch 配置的 score 过滤和 maxsize 截断。
+// HybridSearchImpl 已在 SearchRaw 内处理，此函数仅用于单引擎模式。
+func postSearchFilter(results []search.SearchResult, engineName string) []search.SearchResult {
+	if len(results) == 0 {
+		return results
+	}
+	ec := smartSearchConf.Engines[engineName]
+
+	// score 过滤
+	results = search.FilterByScore(results, ec.MinScore)
+
+	// 单引擎 maxsize 截断
+	engineMax := ec.MaxSize
+	if engineMax <= 0 {
+		engineMax = 4 // defaultEngineMaxSize
+	}
+	// 引擎不回传 score 时，取 min(engineMax, ceil(globalMax/1))
+	if smartSearchConf.MaxSize > 0 {
+		hasScore := false
+		for _, r := range results {
+			if r.Score > 0 {
+				hasScore = true
+				break
+			}
+		}
+		if !hasScore {
+			perEngineCap := smartSearchConf.MaxSize // 单引擎时 ceil(maxSize/1) = maxSize
+			if perEngineCap < engineMax {
+				engineMax = perEngineCap
+			}
+		}
+	}
+	if engineMax > 0 && len(results) > engineMax {
+		results = results[:engineMax]
+	}
+
+	// 全局 maxsize 截断
+	if smartSearchConf.MaxSize > 0 && len(results) > smartSearchConf.MaxSize {
+		search.SortByScore(results)
+		results = results[:smartSearchConf.MaxSize]
+	}
+
+	return results
 }

@@ -7,6 +7,7 @@ import (
 )
 
 type BaiduSearchImpl struct {
+	name       string
 	hostUlr    string
 	authHeader string
 	sk         string
@@ -44,12 +45,15 @@ type baidSearchReponse struct {
 
 func NewBaiduSeach(sk string, blacklist []string) *BaiduSearchImpl {
 	return &BaiduSearchImpl{
+		name:       "baidu_api",
 		hostUlr:    "https://qianfan.baidubce.com/v2/ai_search/web_search",
 		authHeader: "X-Appbuilder-Authorization",
 		sk:         sk,
 		blacklist:  blacklist,
 	}
 }
+
+func (b *BaiduSearchImpl) Name() string { return b.name }
 
 func (b *BaiduSearchImpl) Search(query string) (string, error) {
 	results, err := b.SearchRaw(query)
@@ -92,7 +96,7 @@ func (b *BaiduSearchImpl) SearchRaw(query string) ([]SearchResult, error) {
 	}
 	ret := make([]SearchResult, 0, len(rep.References))
 	for _, val := range rep.References {
-		ret = append(ret, SearchResult{Title: val.Title, Url: val.Url, Content: val.Content, PublishDate: val.Date})
+		ret = append(ret, SearchResult{Title: val.Title, Url: val.Url, Content: val.Content, PublishDate: val.Date, Engine: b.name})
 	}
 	return ret, nil
 }
@@ -101,9 +105,13 @@ func (b *BaiduSearchImpl) MergeContent(query string, results []SearchResult) (st
 		return "", fmt.Errorf("没有搜索结果可以合并")
 	}
 
-	ret := md.MDSearchHeader(query, len(results))
+	buf := md.MDSearchHeader(query, len(results))
 	for i, val := range results {
-		ret = fmt.Sprintf("%s%s", ret, md.FormatMD(i+1, val.Title, val.Url, val.Content))
+		if ShowMeta {
+			buf += md.FormatMDScore(i+1, val.Title, val.Url, val.Engine, formatScore(val.Score), val.Content)
+		} else {
+			buf += md.FormatMD(i+1, val.Title, val.Url, val.Content)
+		}
 	}
-	return ret, nil
+	return buf, nil
 }

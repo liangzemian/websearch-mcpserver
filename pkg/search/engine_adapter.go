@@ -60,6 +60,8 @@ func (a *EngineSearchAdapter) SearchRaw(query string) ([]SearchResult, error) {
 			Url:         strings.TrimSpace(r.URL),
 			Content:     r.Content,
 			PublishDate: r.PublishedAt,
+			Score:       r.Score,
+			Engine:      a.name,
 		})
 	}
 	return results, nil
@@ -73,7 +75,11 @@ func (a *EngineSearchAdapter) MergeContent(query string, results []SearchResult)
 	buf.Grow(1024 * len(results))
 	buf.WriteString(md.MDSearchHeader(query, len(results)))
 	for i, val := range results {
-		buf.WriteString(md.FormatMD(i+1, val.Title, val.Url, val.Content))
+		if ShowMeta {
+			buf.WriteString(md.FormatMDScore(i+1, val.Title, val.Url, val.Engine, formatScore(val.Score), val.Content))
+		} else {
+			buf.WriteString(md.FormatMD(i+1, val.Title, val.Url, val.Content))
+		}
 	}
 	return buf.String(), nil
 }

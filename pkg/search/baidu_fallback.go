@@ -15,6 +15,8 @@ func NewBaiduWithFallback(primary, fallback SearchInf) *BaiduWithFallback {
 	return &BaiduWithFallback{primary: primary, fallback: fallback}
 }
 
+func (b *BaiduWithFallback) Name() string { return "baidu_api" }
+
 func (b *BaiduWithFallback) Search(query string) (string, error) {
 	results, err := b.SearchRaw(query)
 	if err != nil {
