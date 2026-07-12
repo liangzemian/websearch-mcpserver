@@ -2,6 +2,24 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v2.10.0 — 2026-07-12
+
+### 新增
+- **DuckDuckGo 搜索引擎**：新增 DuckDuckGo 通用搜索（需代理），`html.duckduckgo.com/html/` POST + goquery 解析，自动参与 engine/hybrid 模式
+- **HEAD 预检防大文件**：cleanfetch 抓取前先发 HEAD 请求检查 Content-Length，超过阈值（默认 10MB，`max_fetch_size_mb` 可配）直接拒绝
+- **DNS rebinding 防护**：cleanfetch 抓取前 DNS 解析目标域名，检查所有 IP 是否为内网/私有地址，与 go-webfetch 的 BlockPrivateIP 形成双重防护
+- **Jina Reader DNS 防护增强**：`isPrivateHost()` 增加 DNS 解析检查，修复纯字符串匹配的绕过风险
+
+### 变更
+- **Google 引擎默认禁用**：Google 搜索被反爬机制拦截（TLS 指纹+JS Challenge），默认 `google.enabled: false`，需显式启用
+- `CleanFetchConfig` 新增 `MaxFetchSizeMB` 字段（默认 10）
+- `Config` 新增 `DuckDuckGoConfig` 和 `GoogleConfig` 结构体
+
+### 修复
+- **Google 反爬检测增强**：`detectSorry()` 新增 JS Challenge 页面识别（`/httpservice/retry/enablejs`、`SG_SS`）
+- **Google 解析防御**：`parseResults()` 增加 `div#rso`/`div#search` 容器预检，非搜索结果页面直接返回空
+- **Google 解析策略增强**：新增 SearXNG 风格的 `a[data-ved]:not([class])` 选择器作为主解析路径，`div.g` 作为回退
+
 ## v2.9.0 — 2026-07-12
 
 ### 新增

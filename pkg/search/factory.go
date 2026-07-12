@@ -6,6 +6,7 @@ import (
 	"websearch/pkg/baidu"
 	"websearch/pkg/bing"
 	"websearch/pkg/config"
+	"websearch/pkg/ddg"
 	"websearch/pkg/google"
 	"websearch/pkg/log"
 )
@@ -34,6 +35,9 @@ func NewFromConfig(conf config.Config) (*SearchGroup, error) {
 	// ── 初始化 Google 引擎（需代理，由 resolver 动态解析） ──
 	googleAdapter := initGoogleEngine(conf)
 
+	// ── 初始化 DuckDuckGo 引擎（需代理，由 resolver 动态解析） ──
+	ddgAdapter := initDuckDuckGoEngine(conf)
+
 	// ── 按模式选择主引擎 ──
 	switch conf.GetMode() {
 	case config.ModeEngine:
@@ -46,6 +50,9 @@ func NewFromConfig(conf config.Config) (*SearchGroup, error) {
 		}
 		if googleAdapter != nil {
 			engines = append(engines, googleAdapter)
+		}
+		if ddgAdapter != nil {
+			engines = append(engines, ddgAdapter)
 		}
 		if len(engines) == 0 {
 			return nil, fmt.Errorf("engine 模式需要至少一个引擎，请检查 bing 配置")
@@ -88,6 +95,9 @@ func NewFromConfig(conf config.Config) (*SearchGroup, error) {
 		}
 		if googleAdapter != nil {
 			engines = append(engines, googleAdapter)
+		}
+		if ddgAdapter != nil {
+			engines = append(engines, ddgAdapter)
 		}
 		if len(engines) == 0 {
 			return nil, fmt.Errorf("无可用搜索引擎，请检查配置")
@@ -139,9 +149,13 @@ func initBaiduWebEngine(conf config.Config) *EngineSearchAdapter {
 }
 
 // initGoogleEngine 初始化 Google 引擎。
-// 始终初始化，代理端点由 resolver 在每次请求时动态解析。
+// 默认禁用（被反爬拦截暂不可用），需显式 google.enabled: true 启用。
 func initGoogleEngine(conf config.Config) *EngineSearchAdapter {
-	blocked := bing.MergeBlocked(conf.BlackListHost, nil)
+	if !conf.Google.Enabled {
+		log.Info("Google 引擎已禁用（google.enabled=false，被反爬拦截暂不可用）")
+		return nil
+	}
+	blocked := bing.MergeBlocked(conf.BlackListHost, conf.Google.Blocked)
 	eng := google.NewGoogle(google.GoogleOpts{
 		Enabled:      true,
 		Blocked:      blocked,
@@ -150,11 +164,32 @@ func initGoogleEngine(conf config.Config) *EngineSearchAdapter {
 		PerMin:       conf.GetRateLimitPerMin(),
 	})
 	adapter := NewEngineSearchAdapter("google", eng)
-	if conf.Proxy.ProxyResolver() != nil {
-		log.Info("Google 引擎已启用（代理: 自动检测）")
-	} else {
-		log.Info("Google 引擎已启用（直连）")
+	log.Info("Google 引擎已启用（注意：可能被反爬拦截）")
+	return adapter
+}
+
+// initDuckDuckGoEngine 初始化 DuckDuckGo 引擎。
+// 需要代理才能访问，代理端点由 resolver 在每次请求时动态解析。
+// 未配置代理时返回 nil。
+func initDuckDuckGoEngine(conf config.Config) *EngineSearchAdapter {
+	if !conf.DuckDuckGo.Enabled {
+		log.Info("DuckDuckGo 引擎已禁用（duckduckgo.enabled=false）")
+		return nil
 	}
+	if conf.Proxy.ProxyResolver() == nil {
+		log.Info("DuckDuckGo 引擎跳过（需要代理）")
+		return nil
+	}
+	blocked := bing.MergeBlocked(conf.BlackListHost, conf.DuckDuckGo.Blocked)
+	eng := ddg.NewDuckDuckGo(ddg.DuckDuckGoOpts{
+		Enabled:      true,
+		Blocked:      blocked,
+		ProxyResolve: conf.Proxy.ProxyResolver(),
+		PerSec:       conf.GetRateLimitPerSec(),
+		PerMin:       conf.GetRateLimitPerMin(),
+	})
+	adapter := NewEngineSearchAdapter("duckduckgo", eng)
+	log.Info("DuckDuckGo 引擎已启用（代理: 自动检测）")
 	return adapter
 }
 

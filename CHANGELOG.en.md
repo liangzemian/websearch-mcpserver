@@ -2,6 +2,24 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v2.10.0 — 2026-07-12
+
+### Added
+- **DuckDuckGo search engine**: new DuckDuckGo general search (requires proxy), `html.duckduckgo.com/html/` POST + goquery parsing, auto-joins engine/hybrid modes
+- **HEAD pre-check for large files**: cleanfetch sends HEAD request to check Content-Length before fetching, rejects if exceeds threshold (default 10MB, configurable via `max_fetch_size_mb`)
+- **DNS rebinding protection**: cleanfetch resolves target domain DNS before fetching, checks all IPs against private/internal ranges, forms dual protection with go-webfetch's BlockPrivateIP
+- **Jina Reader DNS protection enhancement**: `isPrivateHost()` now includes DNS resolution check, fixes bypass risk of pure string matching
+
+### Changed
+- **Google engine disabled by default**: Google search blocked by anti-bot mechanisms (TLS fingerprint + JS Challenge), defaults to `google.enabled: false`, needs explicit enable
+- `CleanFetchConfig` added `MaxFetchSizeMB` field (default 10)
+- `Config` added `DuckDuckGoConfig` and `GoogleConfig` structs
+
+### Fixed
+- **Google anti-bot detection enhancement**: `detectSorry()` adds JS Challenge page recognition (`/httpservice/retry/enablejs`, `SG_SS`)
+- **Google parsing defense**: `parseResults()` adds `div#rso`/`div#search` container pre-check, returns empty for non-search-result pages
+- **Google parsing strategy enhancement**: added SearXNG-style `a[data-ved]:not([class])` selector as primary parsing path, `div.g` as fallback
+
 ## v2.9.0 — 2026-07-12
 
 ### Added

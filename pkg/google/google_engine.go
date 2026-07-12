@@ -111,6 +111,10 @@ func (e *googleEngine) Search(query string, page int, timeRange antirobot.TimeRa
 	}
 
 	results := e.parseResults(string(body))
+	if len(results) == 0 {
+		e.recordFail()
+		return nil, fmt.Errorf("no results parsed (possible anti-bot page, URL: %s)", resp.Request.URL)
+	}
 
 	if len(e.opts.Blocked) > 0 {
 		results = e.filterBlocked(results)
@@ -122,7 +126,7 @@ func (e *googleEngine) Search(query string, page int, timeRange antirobot.TimeRa
 	return &antirobot.SearchResponse{Engine: "google", Results: results}, nil
 }
 
-// ── CAPTCHA 检测 ──
+// ── CAPTCHA / 安全挑战检测 ──
 
 func detectSorry(resp *http.Response, body string) error {
 	if resp.Request != nil {
@@ -136,6 +140,11 @@ func detectSorry(resp *http.Response, body string) error {
 	}
 	if len(body) < 2000 && strings.Contains(body, "/sorry/") {
 		return fmt.Errorf("blocked by Google CAPTCHA (sorry page in body)")
+	}
+	// 检测 Google JS Challenge 页面（安全验证，非搜索结果）
+	if strings.Contains(body, "/httpservice/retry/enablejs") ||
+		strings.Contains(body, "SG_SS") && !strings.Contains(body, `id="rso"`) {
+		return fmt.Errorf("blocked by Google Security Challenge (JS challenge page)")
 	}
 	return nil
 }
@@ -235,6 +244,73 @@ func (e *googleEngine) parseResults(htmlText string) []antirobot.Result {
 		return nil
 	}
 
+	// 防御性检查：确认页面包含搜索结果容器
+	if doc.Find("div#rso").Length() == 0 && doc.Find("div#search").Length() == 0 {
+		return nil
+	}
+
+	// 策略一：SearXNG 方式 — a[data-ved]:not([class]) 作为入口
+	if results := e.parseByDataVed(doc); len(results) > 0 {
+		return results
+	}
+
+	// 策略二：传统方式 — div.g 作为入口
+	return e.parseByDivG(doc)
+}
+
+// parseByDataVed 参考 SearXNG，使用 a[data-ved]:not([class]) 作为结果入口。
+// 这种方式不依赖特定的容器 class，更稳定。
+func (e *googleEngine) parseByDataVed(doc *goquery.Document) []antirobot.Result {
+	var results []antirobot.Result
+	seen := make(map[string]bool)
+
+	doc.Find("a[data-ved]:not([class])").Each(func(_ int, a *goquery.Selection) {
+		href, _ := a.Attr("href")
+		if href == "" {
+			return
+		}
+
+		// 过滤掉非搜索结果链接（导航、页脚等）
+		if !isSearchResultLink(href) {
+			return
+		}
+
+		// 提取真实 URL
+		realURL := cleanGoogleURL(href)
+		if realURL == "" || seen[realURL] {
+			return
+		}
+
+		// 提取标题：链接内带 style 属性的 div，或 h3
+		title := ""
+		if titleDiv := a.Find("div[style]").First(); titleDiv.Length() > 0 {
+			title = strings.TrimSpace(titleDiv.Text())
+		}
+		if title == "" {
+			title = strings.TrimSpace(a.Find("h3").First().Text())
+		}
+		if title == "" {
+			return
+		}
+
+		// 提取摘要：从链接向上找到结果容器，在其中查找摘要
+		content := extractContentFromAncestor(a)
+
+		seen[realURL] = true
+		results = append(results, antirobot.Result{
+			Type:    antirobot.ResultWeb,
+			Title:   title,
+			URL:     realURL,
+			Content: antirobot.CollapseSpace(content),
+			Engine:  "google",
+		})
+	})
+
+	return results
+}
+
+// parseByDivG 传统方式，使用 div.g 作为结果容器。
+func (e *googleEngine) parseByDivG(doc *goquery.Document) []antirobot.Result {
 	var results []antirobot.Result
 
 	doc.Find("div.g").Each(func(_ int, sel *goquery.Selection) {
@@ -266,8 +342,72 @@ func (e *googleEngine) parseResults(htmlText string) []antirobot.Result {
 	return results
 }
 
+// isSearchResultLink 判断链接是否为搜索结果（非导航/页脚等）。
+func isSearchResultLink(href string) bool {
+	if strings.HasPrefix(href, "/url?q=") {
+		return true
+	}
+	if strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://") {
+		// 排除 Google 自身的导航链接
+		if strings.Contains(href, "google.com/search") ||
+			strings.Contains(href, "accounts.google") ||
+			strings.Contains(href, "support.google") ||
+			strings.Contains(href, "policies.google") {
+			return false
+		}
+		return true
+	}
+	return false
+}
+
+// cleanGoogleURL 清理 Google 重定向链接，提取真实 URL。
+func cleanGoogleURL(href string) string {
+	if strings.HasPrefix(href, "/url?q=") {
+		u, err := url.Parse(href)
+		if err == nil {
+			q := u.Query().Get("q")
+			if q != "" {
+				return q
+			}
+		}
+	}
+	if strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://") {
+		return href
+	}
+	return ""
+}
+
+// extractContentFromAncestor 从链接的祖先元素中提取摘要文本。
+// 参考 SearXNG 的 ../..//div[contains(@class, "...")] 逻辑。
+func extractContentFromAncestor(a *goquery.Selection) string {
+	// 向上遍历 3~5 层祖先，查找包含摘要的 div
+	parent := a.Parent()
+	for i := 0; i < 5; i++ {
+		if parent.Length() == 0 {
+			break
+		}
+		// 在当前祖先中查找已知的摘要选择器
+		for _, selector := range []string{
+			"div.VwiC3b",
+			"div[data-sncf]",
+			"div.IsZvec",
+			"span.aCOpRe",
+			"div[style*='line-clamp']",
+		} {
+			if s := parent.Find(selector).First(); s.Length() > 0 {
+				text := strings.TrimSpace(s.Text())
+				if text != "" && len(text) > 20 {
+					return text
+				}
+			}
+		}
+		parent = parent.Parent()
+	}
+	return ""
+}
+
+// extractURL 从 div.g 容器中提取链接（传统方式使用）。
 func extractURL(sel *goquery.Selection) string {
-	// 优先找直接 http 链接
 	var href string
 	sel.Find("a[href]").Each(func(_ int, a *goquery.Selection) {
 		if href != "" {
@@ -281,8 +421,6 @@ func extractURL(sel *goquery.Selection) string {
 	if href != "" {
 		return href
 	}
-
-	// 回退：/url?q= 重定向格式
 	sel.Find("a[href]").Each(func(_ int, a *goquery.Selection) {
 		if href != "" {
 			return
@@ -301,8 +439,8 @@ func extractURL(sel *goquery.Selection) string {
 	return href
 }
 
+// extractContent 从 div.g 容器中提取摘要（传统方式使用）。
 func extractContent(sel *goquery.Selection) string {
-	// 尝试多个选择器提取摘要
 	for _, selector := range []string{
 		"div[data-sncf]",
 		"div.VwiC3b",
@@ -316,7 +454,6 @@ func extractContent(sel *goquery.Selection) string {
 			}
 		}
 	}
-	// 回退：取容器内除标题外的全部文本
 	fullText := strings.TrimSpace(sel.Text())
 	titleText := strings.TrimSpace(sel.Find("h3").First().Text())
 	return strings.TrimSpace(strings.Replace(fullText, titleText, "", 1))

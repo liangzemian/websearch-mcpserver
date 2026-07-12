@@ -88,4 +88,5 @@ func applyWebFetch(conf config.Config) {
 		return
 	}
 	webfetchInst = f
+	cleanFetchMaxSizeMB = conf.CleanFetch.MaxFetchSizeMB
 }

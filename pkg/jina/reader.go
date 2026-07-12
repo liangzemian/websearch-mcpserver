@@ -3,6 +3,7 @@ package jina
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -136,7 +137,7 @@ func describeHTTPError(code int) string {
 	}
 }
 
-// isPrivateHost 检测是否为内网地址。
+// isPrivateHost 检测是否为内网地址（含 DNS 解析防 rebinding）。
 func isPrivateHost(host string) bool {
 	// 常见内网地址
 	privateHosts := []string{
@@ -144,7 +145,7 @@ func isPrivateHost(host string) bool {
 		"127.0.0.1",
 		"::1",
 		"0.0.0.0",
-		"169.254.169.254", // AWS 元数据
+		"169.254.169.254",         // AWS 元数据
 		"metadata.google.internal", // GCP 元数据
 	}
 	for _, ph := range privateHosts {
@@ -152,7 +153,27 @@ func isPrivateHost(host string) bool {
 			return true
 		}
 	}
-	// 检查私有 IP 段
+	// 检查私有 IP 段（主机名直接是 IP 的情况）
+	if isPrivateIPString(host) {
+		return true
+	}
+	// DNS 解析后检查 IP（防 DNS rebinding）
+	ips, err := net.LookupHost(host)
+	if err != nil {
+		return false // DNS 失败不阻断，由后续请求报错
+	}
+	for _, ipStr := range ips {
+		ip := net.ParseIP(ipStr)
+		if ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+			ip.IsLinkLocalMulticast() || ip.IsUnspecified()) {
+			return true
+		}
+	}
+	return false
+}
+
+// isPrivateIPString 检查字符串是否为私有 IP 地址。
+func isPrivateIPString(host string) bool {
 	if strings.HasPrefix(host, "10.") ||
 		strings.HasPrefix(host, "172.16.") ||
 		strings.HasPrefix(host, "172.17.") ||

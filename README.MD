@@ -11,17 +11,17 @@
 
 ## 简介
 
-用 Go 开发的 MCP 搜索服务，内置百度网页搜索、Bing 通用搜索引擎和 6 个学术搜索引擎。支持 Claude Code、Qwen Code、Cursor 等 MCP 客户端，也可作为 Go 模块嵌入。
+用 Go 开发的 MCP 搜索服务，内置百度网页搜索、Bing、DuckDuckGo 通用搜索引擎和 6 个学术搜索引擎。支持 Claude Code、Qwen Code、Cursor 等 MCP 客户端，也可作为 Go 模块嵌入。
 
 ## 设计亮点
 
-- **零依赖启动** — `engine` 模式无需任何 API Key，内置百度网页搜索 + Bing 双引擎并发，代理可用时自动加入 Google
-- **系统代理自动检测** — 默认读取 Windows 注册表 / 环境变量，Clash 等代理软件开启系统代理后 Google、学术引擎、Jina Reader 自动走代理，无需手动配置
+- **零依赖启动** — `engine` 模式无需任何 API Key，内置百度网页搜索 + Bing 双引擎并发，代理可用时自动加入 DuckDuckGo
+- **系统代理自动检测** — 默认读取 Windows 注册表 / 环境变量，Clash 等代理软件开启系统代理后 DuckDuckGo、学术引擎、Jina Reader 自动走代理，无需手动配置
 - **智能限流重试** — 所有 HTTP 客户端自动处理 429 限流（读取 `Retry-After` 头等待后重试），arXiv 引擎内置 1 req/s 限流器避免触发限流
 - **多引擎并行编排** — 学术搜索并发请求多个引擎，结果按 URL 去重 + 分组归一化排序；hybrid 模式下多引擎原生混合
 - **搜索结果 Score 过滤** — 支持 per-engine 最低相关性分数阈值和最大结果数截断，无 score 引擎自动跳过过滤，合并后按 score 排序或轮询均匀分配
 - **智能回退** — 百度 SK 失败自动回退网页搜索；主引擎失败自动回退 Bing；LLM 摘要失败回退原始结果；cleanfetch 失败回退 Jina Reader；缓存异常跳过缓存
-- **增强型网页抓取** — 基于 go-webfetch，无需代理即可抓取网页，内置 SSRF 防护和 WAF 检测，大内容自动存储到临时文件
+- **增强型网页抓取** — 基于 go-webfetch，无需代理即可抓取网页，内置 SSRF 防护、DNS rebinding 检测、HEAD 预检防大文件和 WAF 检测，大内容自动存储到临时文件
 - **MinerU AI 增强 PDF 解析** — 可选集成 MinerU 文档解析平台，支持表格/公式/多栏/图片智能识别；有 Token 用精准 API（≤200MB），无 Token 自动降级 Agent 轻量 API（≤10MB），失败静默回退本地解析
 - **引用计数进程管理** — 多客户端共享同一实例，归零自动优雅退出
 - **子智能体扩展** — 可选配套 [web-researcher](https://github.com/daidaiJ/web-researcher) 扩展，将网络调研卸载到 fast model 子智能体，主模型上下文零膨胀（详见 [Qwen Code 子智能体扩展](#qwen-code-子智能体扩展web-researcher)）
@@ -31,7 +31,7 @@
 
 | 类别 | 能力 |
 |------|------|
-| **通用搜索** | 百度千帆、百度网页搜索（内置）、Tavily、Bing（内置）、Google（自动检测代理） |
+| **通用搜索** | 百度千帆、百度网页搜索（内置）、Tavily、Bing（内置）、DuckDuckGo（自动检测代理）、Google（默认禁用，需显式启用） |
 | **学术搜索** | arXiv、Crossref、OpenAlex、PubMed（国内直连）+ Semantic Scholar、Google Scholar（自动检测代理） |
 | **MCP 工具** | `smartsearch` 网络检索 · `academicsearch` 论文检索 · `cleanfetch` 网页抓取 · `pdf_parser` PDF 解析 |
 | **缓存** | SQLite 自动缓存，6h 过期，后台定时清理 |
@@ -169,8 +169,8 @@ Windows 自启动（可选）：下载后执行 `websearch-mcpserver.exe install
 |------|------|----------|
 | `baidu` | 百度千帆 SK（失败自动回退百度网页搜索）；无 SK 时直接用百度网页搜索 | `BAIDU_SK`（可选） |
 | `tavily` | Tavily Search API | `TAVILY_SK` |
-| `hybrid` | 百度 SK + 百度网页搜索 + Tavily + Bing + Google 并发去重 | 两者（可选） |
-| **`engine`** | **百度网页搜索 + Bing**（代理可用时自动加入 Google） | **无需** |
+| `hybrid` | 百度 SK + 百度网页搜索 + Tavily + Bing + DuckDuckGo 并发去重 | 两者（可选） |
+| **`engine`** | **百度网页搜索 + Bing**（代理可用时自动加入 DuckDuckGo） | **无需** |
 
 > 所有模式下主引擎失败均自动回退。无 Key 时自动降级为 `engine`。`baidu` 模式无 SK 时使用百度网页搜索（tn=json，无需 API Key）。
 
@@ -192,7 +192,9 @@ smartsearch:
       max_size: 5
     baidu:             # 百度网页搜索（不回传 score）
       max_size: 5
-    google:            # Google（不回传 score，需代理）
+    google:            # Google（默认禁用，被反爬拦截）
+      max_size: 4
+    duckduckgo:        # DuckDuckGo（不回传 score，需代理）
       max_size: 4
 ```
 
@@ -220,7 +222,8 @@ smartsearch:
 | `baidu_api` | 百度千帆 AI Search API | ❌ |
 | `baidu` | 百度网页搜索（内置） | ❌ |
 | `bing` | Bing（内置） | ❌ |
-| `google` | Google（需代理） | ❌ |
+| `google` | Google（默认禁用，被反爬拦截） | ❌ |
+| `duckduckgo` | DuckDuckGo（需代理） | ❌ |
 
 ### `academicsearch` — 学术论文检索
 
@@ -237,7 +240,7 @@ smartsearch:
 |------|------|------|------|
 | `url` | string | ✅ | 网页 URL |
 
-需配置 `cleanfetch.enabled: true`。基于 go-webfetch，无需代理；失败时自动回退 Jina Reader（需配置 `jina.api_key`，代理自动检测）。
+需配置 `cleanfetch.enabled: true`。基于 go-webfetch，无需代理；内置 DNS rebinding 防护和 HEAD 预检防大文件（`max_fetch_size_mb` 控制阈值，默认 10MB）；失败时自动回退 Jina Reader（需配置 `jina.api_key`，代理自动检测）。
 
 ### `pdf_parser` — PDF 解析
 

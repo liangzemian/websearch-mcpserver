@@ -154,9 +154,11 @@ func TestParseResults_RedirectURL(t *testing.T) {
 	e := &googleEngine{}
 
 	htmlText := `<html><body>
+<div id="rso">
 <div class="g">
   <div><a href="/url?q=https://real-site.com/article&amp;sa=U&amp;ved=xxx"><h3>Real Site</h3></a></div>
   <div data-sncf="1">Content here.</div>
+</div>
 </div>
 </body></html>`
 

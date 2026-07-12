@@ -13,8 +13,8 @@ log_level: info
 # 搜索模式:
 #   - baidu   : 百度千帆 SK（失败自动回退百度网页搜索）；无 SK 时直接用百度网页搜索
 #   - tavily  : 仅使用 Tavily Search API
-#   - hybrid  : 百度 SK + 百度网页搜索 + Tavily + Bing + Google 并发去重
-#   - engine  : 百度网页搜索 + Bing（代理启用时加入 Google），无需 API Key
+#   - hybrid  : 百度 SK + 百度网页搜索 + Tavily + Bing + DuckDuckGo 并发去重
+#   - engine  : 百度网页搜索 + Bing + DuckDuckGo（代理启用时加入 DuckDuckGo），无需 API Key
 mode: engine
 
 # 网络环境: china（默认，自动跳过海外引擎） / international（启用全部引擎）
@@ -63,6 +63,22 @@ bing:
   blocked: [] # Bing 专用屏蔽域名（与 black_list_host 合并）
 
 # ==============================================
+# DuckDuckGo 搜索引擎（需代理才能访问）
+# 无需 API Key，默认开启；代理启用时自动参与搜索
+# ==============================================
+duckduckgo:
+  enabled: true
+  blocked: [] # DuckDuckGo 专用屏蔽域名（与 black_list_host 合并）
+
+# ==============================================
+# Google 搜索引擎（默认禁用，被反爬拦截暂不可用）
+# 显式 enabled: true 可尝试启用，但可能返回安全挑战页面
+# ==============================================
+google:
+  enabled: false
+  blocked: [] # Google 专用屏蔽域名（与 black_list_host 合并）
+
+# ==============================================
 # 学术搜索引擎（无需 API Key）
 # ==============================================
 academic:
@@ -80,7 +96,7 @@ academic:
 # ==============================================
 # 代理配置
 # 默认自动检测系统代理（Windows 注册表 / 环境变量）。
-# Clash、V2RayN 等代理软件开启系统代理后，Google、Semantic Scholar、
+# Clash、V2RayN 等代理软件开启系统代理后，DuckDuckGo、Semantic Scholar、
 # Google Scholar、Jina Reader 等工具自动通过代理访问，无需手动配置。
 # 显式设置 enabled: false 可完全禁用代理。
 # ==============================================
@@ -130,6 +146,7 @@ cleanfetch:
   max_inline_lines: 100     # 内联返回最大行数，超过则存文件（默认 100）
   max_inline_chars: 0       # 内联返回最大字符数，0=不限（默认 0）
   timeout_sec: 30           # 单次请求超时（秒），默认 30；经代理访问海外站点建议 30~60
+  max_fetch_size_mb: 10     # HEAD 预检最大文件大小（MB），超过拒绝抓取（默认 10）
 
 # ==============================================
 # PDF 解析工具（基于 go-webfetch，独立于 cleanfetch）

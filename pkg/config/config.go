@@ -36,8 +36,10 @@ type Config struct {
 	Jina          JinaConfig       `mapstructure:"jina"`
 	Cache         CacheConfig      `mapstructure:"cache"`
 	Log           LogConfig        `mapstructure:"log"`
-	Bing          BingConfig       `mapstructure:"bing"`
-	Academic      AcademicConfig   `mapstructure:"academic"`
+	Bing          BingConfig        `mapstructure:"bing"`
+	DuckDuckGo    DuckDuckGoConfig `mapstructure:"duckduckgo"`
+	Google        GoogleConfig      `mapstructure:"google"`
+	Academic      AcademicConfig    `mapstructure:"academic"`
 	CleanFetch    CleanFetchConfig   `mapstructure:"cleanfetch"`
 	PDFParser     PDFParserConfig    `mapstructure:"pdf_parser"`
 	Proxy         ProxyConfig        `mapstructure:"proxy"`
@@ -57,6 +59,16 @@ type TavilyConfig struct {
 type BingConfig struct {
 	Enabled bool     `mapstructure:"enabled"` // 总开关（默认 true）
 	Blocked []string `mapstructure:"blocked"` // Bing 屏蔽域名
+}
+
+type DuckDuckGoConfig struct {
+	Enabled bool     `mapstructure:"enabled"` // 总开关（默认 true，需代理）
+	Blocked []string `mapstructure:"blocked"` // DuckDuckGo 屏蔽域名
+}
+
+type GoogleConfig struct {
+	Enabled bool     `mapstructure:"enabled"` // 总开关（默认 false，被反爬拦截暂不可用）
+	Blocked []string `mapstructure:"blocked"` // Google 屏蔽域名
 }
 
 // RateLimitConfig 全局搜索引擎限流配置（对所有引擎统一生效）。
@@ -89,6 +101,7 @@ type CleanFetchConfig struct {
 	MaxInlineLines int    `mapstructure:"max_inline_lines"` // 内联返回最大行数（默认 100）
 	MaxInlineChars int    `mapstructure:"max_inline_chars"` // 内联返回最大字符数（默认 0 = 不限）
 	TimeoutSec     int    `mapstructure:"timeout_sec"`      // 单次请求超时（秒），默认 30
+	MaxFetchSizeMB int    `mapstructure:"max_fetch_size_mb"` // 最大抓取文件大小（MB），HEAD 预检用，默认 10
 }
 
 // ── PDF 解析配置 ──
@@ -369,6 +382,10 @@ func Load(configPath string) (*Config, error) {
 	if !viper.IsSet("bing.enabled") {
 		conf.Bing.Enabled = true
 	}
+	// DuckDuckGo 默认开启（需代理才能访问）
+	if !viper.IsSet("duckduckgo.enabled") {
+		conf.DuckDuckGo.Enabled = true
+	}
 	// 学术引擎默认开启
 	if !viper.IsSet("academic.enabled") {
 		conf.Academic.Enabled = true
@@ -390,6 +407,9 @@ func Load(configPath string) (*Config, error) {
 	}
 	if conf.CleanFetch.TimeoutSec <= 0 {
 		conf.CleanFetch.TimeoutSec = 30
+	}
+	if conf.CleanFetch.MaxFetchSizeMB <= 0 {
+		conf.CleanFetch.MaxFetchSizeMB = 10
 	}
 
 	// 代理：标记用户显式禁用（enabled: false），跳过自动检测

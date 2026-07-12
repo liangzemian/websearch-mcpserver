@@ -11,17 +11,17 @@
 
 ## Introduction
 
-An MCP search service built in Go with built-in Baidu web search, Bing, and 6 academic search engines. Works with Claude Code, Qwen Code, Cursor, and other MCP clients, or embed as a Go module.
+An MCP search service built in Go with built-in Baidu web search, Bing, DuckDuckGo, and 6 academic search engines. Works with Claude Code, Qwen Code, Cursor, and other MCP clients, or embed as a Go module.
 
 ## Design Highlights
 
-- **Zero-config startup** — `engine` mode requires no API keys; built-in Baidu web search + Bing dual-engine concurrent search, Google auto-joins when a proxy is available
-- **System proxy auto-detection** — reads Windows registry / environment variables by default; Clash and similar proxy software work automatically without manual configuration
+- **Zero-config startup** — `engine` mode requires no API keys; built-in Baidu web search + Bing dual-engine concurrent search, DuckDuckGo auto-joins when a proxy is available
+- **System proxy auto-detection** — reads Windows registry / environment variables by default; Clash and similar proxy software enable DuckDuckGo, academic engines, Jina Reader automatically without manual configuration
 - **Smart rate-limit retry** — all HTTP clients handle 429 responses automatically (reads `Retry-After` header); arXiv engine has a built-in 1 req/s limiter
 - **Multi-engine parallel orchestration** — academic search fires requests to multiple engines concurrently with URL dedup + normalized grouping; hybrid mode mixes native engines
 - **Score-based result filtering** — per-engine minimum relevance score thresholds and max result count truncation; engines without score support skip filtering automatically; merged results sorted by score or distributed round-robin
 - **Smart fallback** — Baidu SK failure falls back to web search; primary engine failure falls back to Bing; LLM summary failure falls back to raw results; cleanfetch failure falls back to Jina Reader; cache errors are silently skipped
-- **Enhanced web fetching** — based on go-webfetch, no proxy needed; built-in SSRF protection and WAF detection; large content auto-stored to temp files
+- **Enhanced web fetching** — based on go-webfetch, no proxy needed; built-in SSRF protection, DNS rebinding detection, HEAD pre-check for large files and WAF detection; large content auto-stored to temp files
 - **MinerU AI-enhanced PDF parsing** — optional MinerU integration for intelligent table/formula/multi-column/image recognition; with Token uses Standard API (≤200MB), without Token auto-degrades to Agent Lightweight API (≤10MB), silently falls back to local parsing on failure
 - **Reference-counted process management** — multiple clients share one instance; auto-exits when count reaches zero
 - **Sub-agent extension** — optional companion [web-researcher](https://github.com/daidaiJ/web-researcher) extension offloads web research to a fast model sub-agent, zero context bloat for the main model (see [Qwen Code Sub-Agent Extension](#qwen-code-sub-agent-extension-web-researcher))
@@ -31,7 +31,7 @@ An MCP search service built in Go with built-in Baidu web search, Bing, and 6 ac
 
 | Category | Capabilities |
 |----------|-------------|
-| **General Search** | Baidu Qianfan, Baidu Web Search (built-in), Tavily, Bing (built-in), Google (auto-detects proxy) |
+| **General Search** | Baidu Qianfan, Baidu Web Search (built-in), Tavily, Bing (built-in), DuckDuckGo (auto-detects proxy), Google (disabled by default, needs explicit enable) |
 | **Academic Search** | arXiv, Crossref, OpenAlex, PubMed (direct from China) + Semantic Scholar, Google Scholar (auto-detects proxy) |
 | **MCP Tools** | `smartsearch` web search · `academicsearch` paper search · `cleanfetch` web fetch · `pdf_parser` PDF parsing |
 | **Caching** | SQLite auto-cache, 6h expiry, background cleanup |
@@ -169,8 +169,8 @@ Windows auto-start (optional): run `websearch-mcpserver.exe install` after downl
 |------|-------------|--------------|
 | `baidu` | Baidu Qianfan SK (falls back to Baidu web search on failure); uses Baidu web search directly when no SK | `BAIDU_SK` (optional) |
 | `tavily` | Tavily Search API | `TAVILY_SK` |
-| `hybrid` | Baidu SK + Baidu web search + Tavily + Bing + Google concurrent dedup | Both (optional) |
-| **`engine`** | **Baidu web search + Bing** (Google auto-joins when proxy available) | **None** |
+| `hybrid` | Baidu SK + Baidu web search + Tavily + Bing + DuckDuckGo concurrent dedup | Both (optional) |
+| **`engine`** | **Baidu web search + Bing** (DuckDuckGo auto-joins when proxy available) | **None** |
 
 > All modes auto-fallback on primary engine failure. Auto-degrades to `engine` mode when keys are missing. `baidu` mode uses Baidu web search (tn=json, no API key) when no SK is configured.
 
@@ -192,7 +192,9 @@ smartsearch:
       max_size: 5
     baidu:             # Baidu web search (no score)
       max_size: 5
-    google:            # Google (no score, needs proxy)
+    google:            # Google (disabled by default, anti-bot blocked)
+      max_size: 4
+    duckduckgo:        # DuckDuckGo (no score, needs proxy)
       max_size: 4
 ```
 
@@ -220,7 +222,8 @@ Results include engine source and relevance score by default (for engines that s
 | `baidu_api` | Baidu Qianfan AI Search API | ❌ |
 | `baidu` | Baidu Web Search (built-in) | ❌ |
 | `bing` | Bing (built-in) | ❌ |
-| `google` | Google (needs proxy) | ❌ |
+| `google` | Google (disabled by default, anti-bot blocked) | ❌ |
+| `duckduckgo` | DuckDuckGo (needs proxy) | ❌ |
 
 ### `academicsearch` — Academic Paper Search
 
@@ -237,7 +240,7 @@ Results include engine source and relevance score by default (for engines that s
 |-----------|------|----------|-------------|
 | `url` | string | ✅ | Web page URL |
 
-Requires `cleanfetch.enabled: true`. Based on go-webfetch, no proxy needed; falls back to Jina Reader on failure (requires `jina.api_key`, proxy auto-detected).
+Requires `cleanfetch.enabled: true`. Based on go-webfetch, no proxy needed; built-in DNS rebinding protection and HEAD pre-check for large files (`max_fetch_size_mb` controls threshold, default 10MB); falls back to Jina Reader on failure (requires `jina.api_key`, proxy auto-detected).
 
 ### `pdf_parser` — PDF Parsing
 
