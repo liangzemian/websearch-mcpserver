@@ -81,8 +81,16 @@ cleanfetch:
   max_inline_chars: 0       # 超过此字符数存文件，0=不限
 
 # PDF 解析工具（默认关闭，独立于 cleanfetch）
+# MinerU AI 增强（可选）：有 Token 用精准 API（远程 URL，≤200MB），无 Token 用 Agent 轻量 API（本地文件，≤10MB）
+# 获取 Token: https://mineru.net/apiManage | 环境变量: MINERU_TOKEN
 pdf_parser:
   enabled: false            # 显式 true 才启用
+  # mineru_token: ""        # JWT Token，有则启用精准 API
+  # mineru_model: "pipeline" # pipeline(默认) / vlm(推荐)
+  # mineru_ocr: false        # OCR 识别
+  # mineru_formula: true     # 公式识别（默认 true）
+  # mineru_table: true       # 表格识别（默认 true）
+  # mineru_lang: "ch"        # 文档语言（默认 ch）
 
 # 日志滚动
 log:
@@ -99,6 +107,7 @@ log:
 | `TAVILY_SK` | `tavily.api_key` | |
 | `LLM_BASE_URL` | `llm.base_url` | |
 | `LLM_API_KEY` | `llm.api_key` | |
+| `MINERU_TOKEN` | `pdf_parser.mineru_token` | MinerU 精准解析 API Token |
 
 > Viper 的 `AutomaticEnv()` 还支持 `APP_` 前缀覆盖任意配置项。
 
@@ -120,6 +129,10 @@ log:
 | `cleanfetch.file_ttl_hours` | 24 | |
 | `cleanfetch.max_inline_lines` | 100 | |
 | `pdf_parser.enabled` | false | 独立于 cleanfetch |
+| `pdf_parser.mineru_model` | pipeline | pipeline / vlm |
+| `pdf_parser.mineru_formula` | true | 公式识别 |
+| `pdf_parser.mineru_table` | true | 表格识别 |
+| `pdf_parser.mineru_lang` | ch | 文档语言 |
 | `cache.enabled` | nil | 不设置时按 storage_path 判断；显式 false 强制禁用；显式 true 强制启用 |
 | `cache.cleanup_interval` | 30 (min) | 最大 360 |
 | 缓存过期 | 6 小时 | 基于最近命中时间，硬编码不可配置 |

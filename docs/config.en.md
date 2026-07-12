@@ -81,8 +81,16 @@ cleanfetch:
   max_inline_chars: 0       # Chars above this threshold stored to file, 0=unlimited
 
 # PDF parser (disabled by default, independent of cleanfetch)
+# MinerU AI enhancement (optional): with Token uses Standard API (remote URL, ≤200MB), without Token uses Agent API (local file, ≤10MB)
+# Get Token: https://mineru.net/apiManage | Env: MINERU_TOKEN
 pdf_parser:
   enabled: false            # Must be explicitly true to enable
+  # mineru_token: ""        # JWT Token; enables Standard API when set
+  # mineru_model: "pipeline" # pipeline (default) / vlm (recommended)
+  # mineru_ocr: false        # OCR recognition
+  # mineru_formula: true     # Formula recognition (default true)
+  # mineru_table: true       # Table recognition (default true)
+  # mineru_lang: "ch"        # Document language (default ch)
 
 # Log rotation
 log:
@@ -99,6 +107,7 @@ log:
 | `TAVILY_SK` | `tavily.api_key` | |
 | `LLM_BASE_URL` | `llm.base_url` | |
 | `LLM_API_KEY` | `llm.api_key` | |
+| `MINERU_TOKEN` | `pdf_parser.mineru_token` | MinerU Standard API Token |
 
 > Viper's `AutomaticEnv()` also supports `APP_` prefix for overriding any config field.
 
@@ -120,6 +129,10 @@ log:
 | `cleanfetch.file_ttl_hours` | 24 | |
 | `cleanfetch.max_inline_lines` | 100 | |
 | `pdf_parser.enabled` | false | Independent of cleanfetch |
+| `pdf_parser.mineru_model` | pipeline | pipeline / vlm |
+| `pdf_parser.mineru_formula` | true | Formula recognition |
+| `pdf_parser.mineru_table` | true | Table recognition |
+| `pdf_parser.mineru_lang` | ch | Document language |
 | `cache.enabled` | nil | Not set → judge by storage_path; explicit false → force disable; explicit true → force enable |
 | `cache.cleanup_interval` | 30 (min) | Max 360 |
 | Cache expiry | 6 hours | Based on last hit time, hardcoded |

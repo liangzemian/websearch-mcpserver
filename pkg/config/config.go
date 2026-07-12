@@ -94,7 +94,50 @@ type CleanFetchConfig struct {
 // ── PDF 解析配置 ──
 
 type PDFParserConfig struct {
-	Enabled bool `mapstructure:"enabled"` // 总开关（默认 false）
+	Enabled       bool   `mapstructure:"enabled"`        // 总开关（默认 false）
+	MinerUToken   string `mapstructure:"mineru_token"`   // MinerU API Token（精准解析 API 需要）
+	MinerUModel   string `mapstructure:"mineru_model"`   // 模型版本: pipeline(默认) / vlm
+	MinerUOcr     bool   `mapstructure:"mineru_ocr"`    // OCR 识别（默认 false）
+	MinerUFormula *bool  `mapstructure:"mineru_formula"` // 公式识别（nil=默认 true）
+	MinerUTable   *bool  `mapstructure:"mineru_table"`   // 表格识别（nil=默认 true）
+	MinerULang    string `mapstructure:"mineru_lang"`    // 文档语言（默认 ch）
+}
+
+// MinerUEnabled 返回是否启用 MinerU 增强（有 Token 或 Enabled 时可用）。
+func (c PDFParserConfig) MinerUEnabled() bool {
+	return c.Enabled || c.MinerUToken != ""
+}
+
+// GetMinerUModel 返回模型版本（默认 pipeline）。
+func (c PDFParserConfig) GetMinerUModel() string {
+	if c.MinerUModel != "" {
+		return c.MinerUModel
+	}
+	return "pipeline"
+}
+
+// GetMinerULang 返回文档语言（默认 ch）。
+func (c PDFParserConfig) GetMinerULang() string {
+	if c.MinerULang != "" {
+		return c.MinerULang
+	}
+	return "ch"
+}
+
+// GetMinerUFormula 返回公式识别开关（默认 true）。
+func (c PDFParserConfig) GetMinerUFormula() bool {
+	if c.MinerUFormula != nil {
+		return *c.MinerUFormula
+	}
+	return true
+}
+
+// GetMinerUTable 返回表格识别开关（默认 true）。
+func (c PDFParserConfig) GetMinerUTable() bool {
+	if c.MinerUTable != nil {
+		return *c.MinerUTable
+	}
+	return true
 }
 
 // ── 代理配置 ──
@@ -307,6 +350,7 @@ func Load(configPath string) (*Config, error) {
 	viper.BindEnv("tavily.api_key", "TAVILY_SK")
 	viper.BindEnv("llm.base_url", "LLM_BASE_URL")
 	viper.BindEnv("llm.api_key", "LLM_API_KEY")
+	viper.BindEnv("pdf_parser.mineru_token", "MINERU_TOKEN")
 	var conf Config
 	if err := viper.Unmarshal(&conf); err != nil {
 		return nil, fmt.Errorf("配置解析失败,%w", err)

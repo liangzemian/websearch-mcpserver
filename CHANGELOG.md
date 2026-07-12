@@ -2,6 +2,29 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v2.9.0 — 2026-07-12
+
+### 新增
+- **MinerU AI 增强 PDF 解析**：`pdf_parser` 工具集成 [MinerU](https://mineru.net) 文档解析平台，支持表格/公式/多栏/图片智能识别
+  - **双 API 模式自动切换**：
+    - 有 Token → 精准解析 API（`/api/v4`），支持远程 URL 输入，≤200MB/200页，ZIP 输出含 Markdown + JSON
+    - 无 Token → Agent 轻量 API（`/api/v1/agent`），支持本地文件签名上传，≤10MB/20页，Markdown 输出
+  - **本地文件优先 MinerU**：Agent API 自动签名上传本地 PDF，失败时静默回退到本地解析（go-webfetch）
+  - **远程 URL 优先 MinerU**：精准 API 解析远程 URL，失败时回退到本地 webfetch
+  - **友好错误处理**：API 错误码统一翻译为中文提示，原始错误仅记录日志，不暴露给客户端
+  - 配置项：`mineru_token`（环境变量 `MINERU_TOKEN`）、`mineru_model`（pipeline/vlm）、`mineru_ocr`、`mineru_formula`、`mineru_table`、`mineru_lang`
+- 新增 `pkg/mineru/` 包：MinerU API 客户端实现 + 单元测试 + 集成测试
+
+### 变更
+- `PDFParserConfig` 扩展 MinerU 相关字段，新增 `MinerUEnabled()`、`GetMinerUModel()` 等辅助方法
+- `webfetch.Fetcher` 初始化时自动检测 MinerU 配置并创建客户端
+- `pdf_parser` MCP 工具描述动态显示 MinerU 增强状态
+
+## v2.8.0 — 2026-07-11
+
+### 修复
+- **cleanfetch 系统代理自动检测**：修复 cleanfetch 无法访问境外站点的问题，支持自动检测系统代理配置
+
 ## v2.7.0 — 2026-06-25
 
 ### 新增

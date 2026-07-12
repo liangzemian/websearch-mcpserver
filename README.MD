@@ -22,6 +22,7 @@
 - **搜索结果 Score 过滤** — 支持 per-engine 最低相关性分数阈值和最大结果数截断，无 score 引擎自动跳过过滤，合并后按 score 排序或轮询均匀分配
 - **智能回退** — 百度 SK 失败自动回退网页搜索；主引擎失败自动回退 Bing；LLM 摘要失败回退原始结果；cleanfetch 失败回退 Jina Reader；缓存异常跳过缓存
 - **增强型网页抓取** — 基于 go-webfetch，无需代理即可抓取网页，内置 SSRF 防护和 WAF 检测，大内容自动存储到临时文件
+- **MinerU AI 增强 PDF 解析** — 可选集成 MinerU 文档解析平台，支持表格/公式/多栏/图片智能识别；有 Token 用精准 API（≤200MB），无 Token 自动降级 Agent 轻量 API（≤10MB），失败静默回退本地解析
 - **引用计数进程管理** — 多客户端共享同一实例，归零自动优雅退出
 - **子智能体扩展** — 可选配套 [web-researcher](https://github.com/daidaiJ/web-researcher) 扩展，将网络调研卸载到 fast model 子智能体，主模型上下文零膨胀（详见 [Qwen Code 子智能体扩展](#qwen-code-子智能体扩展web-researcher)）
 - **纯 Go 无 CGO** — SQLite 使用 `modernc.org/sqlite`，单二进制部署
@@ -238,13 +239,19 @@ smartsearch:
 
 需配置 `cleanfetch.enabled: true`。基于 go-webfetch，无需代理；失败时自动回退 Jina Reader（需配置 `jina.api_key`，代理自动检测）。
 
-### `pdf_parser` — 本地 PDF 解析
+### `pdf_parser` — PDF 解析
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `path` | string | ✅ | 本地 PDF 文件路径 |
+| `path` | string | ✅ | 本地 PDF 文件路径或远程 URL |
 
 需配置 `pdf_parser.enabled: true`。大文档自动存储到临时文件。
+
+**MinerU AI 增强**（可选）：配置 `mineru_token` 后自动启用 MinerU 解析，支持表格/公式/多栏/图片智能识别。
+- 有 Token：精准解析 API，支持远程 URL（≤200MB/200页）
+- 无 Token：Agent 轻量 API，本地文件签名上传（≤10MB/20页）
+- 获取 Token：https://mineru.net/apiManage
+- 环境变量：`MINERU_TOKEN`
 
 > 工具注册条件：`smartsearch` 需 `bing.enabled=true`；`academicsearch` 需 `academic.enabled=true`；`cleanfetch` 需 `cleanfetch.enabled=true`；`pdf_parser` 需 `pdf_parser.enabled=true`。
 

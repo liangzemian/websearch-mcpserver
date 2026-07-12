@@ -2,6 +2,29 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v2.9.0 — 2026-07-12
+
+### Added
+- **MinerU AI-enhanced PDF parsing**: `pdf_parser` tool integrates [MinerU](https://mineru.net) document parsing platform, supporting intelligent table/formula/multi-column/image recognition
+  - **Dual API mode with automatic switching**:
+    - With Token → Standard API (`/api/v4`), supports remote URL input, ≤200MB/200 pages, ZIP output with Markdown + JSON
+    - Without Token → Agent Lightweight API (`/api/v1/agent`), supports local file signed upload, ≤10MB/20 pages, Markdown output
+  - **Local files prioritize MinerU**: Agent API auto-signed-uploads local PDFs, silently falls back to local parsing (go-webfetch) on failure
+  - **Remote URLs prioritize MinerU**: Standard API parses remote URLs, falls back to local webfetch on failure
+  - **Friendly error handling**: API error codes translated to Chinese prompts; raw errors only logged, never exposed to clients
+  - Config: `mineru_token` (env `MINERU_TOKEN`), `mineru_model` (pipeline/vlm), `mineru_ocr`, `mineru_formula`, `mineru_table`, `mineru_lang`
+- New `pkg/mineru/` package: MinerU API client implementation + unit tests + integration tests
+
+### Changed
+- `PDFParserConfig` extended with MinerU fields, new `MinerUEnabled()`, `GetMinerUModel()` helper methods
+- `webfetch.Fetcher` auto-detects MinerU config during initialization and creates client
+- `pdf_parser` MCP tool description dynamically shows MinerU enhancement status
+
+## v2.8.0 — 2026-07-11
+
+### Fixed
+- **cleanfetch system proxy auto-detection**: fixed cleanfetch being unable to access overseas sites, now supports automatic system proxy detection
+
 ## v2.7.0 — 2026-06-25
 
 ### Added

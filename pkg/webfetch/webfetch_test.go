@@ -16,7 +16,7 @@ func newTestFetcher(t *testing.T) *Fetcher {
 		Enabled:        true,
 		FileTTL:        1,
 		MaxInlineLines: 100,
-	}, config.ProxyConfig{}.GetProxyEndpoint())
+	}, config.PDFParserConfig{}, config.ProxyConfig{}.GetProxyEndpoint())
 	if err != nil {
 		t.Fatalf("NewFromConfig failed: %v", err)
 	}
@@ -121,8 +121,7 @@ func TestClassifyErrors(t *testing.T) {
 func TestNewFromConfigDefaults(t *testing.T) {
 	fetcher, err := NewFromConfig(config.CleanFetchConfig{
 		Enabled: true,
-		// 零值字段应使用默认值
-	}, config.ProxyConfig{}.GetProxyEndpoint())
+	}, config.PDFParserConfig{}, config.ProxyConfig{}.GetProxyEndpoint())
 	if err != nil {
 		t.Fatalf("NewFromConfig with defaults failed: %v", err)
 	}

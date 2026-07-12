@@ -10,6 +10,7 @@ import (
 	"time"
 	"websearch/pkg/config"
 	"websearch/pkg/log"
+	"websearch/pkg/mineru"
 
 	webfetch "github.com/daidaiJ/go-webfetch"
 )
@@ -28,10 +29,11 @@ type Result struct {
 // Fetcher 封装 go-webfetch Engine。
 type Fetcher struct {
 	engine *webfetch.Engine
+	mineru *mineru.Client
 }
 
 // NewFromConfig 根据配置创建 Fetcher。proxyURL 为代理地址，空字符串表示不使用代理（仍回退到环境变量）。
-func NewFromConfig(cfg config.CleanFetchConfig, proxyURL string) (*Fetcher, error) {
+func NewFromConfig(cfg config.CleanFetchConfig, pdfCfg config.PDFParserConfig, proxyURL string) (*Fetcher, error) {
 	outputDir := cfg.FileOutputDir
 	if outputDir == "" {
 		outputDir = filepath.Join(os.TempDir(), "webfetch")
@@ -66,20 +68,71 @@ func NewFromConfig(cfg config.CleanFetchConfig, proxyURL string) (*Fetcher, erro
 	}
 
 	log.Infof("WebFetch 引擎已启用 (output_dir=%s, ttl=%s, max_inline_lines=%d, timeout=%s)", outputDir, fileTTL, maxInlineLines, timeout)
-	return &Fetcher{engine: engine}, nil
+
+	f := &Fetcher{engine: engine}
+
+	// 初始化 MinerU 客户端（可选增强）
+	if pdfCfg.MinerUEnabled() {
+		f.mineru = mineru.NewFromConfig(
+			pdfCfg.MinerUToken,
+			pdfCfg.GetMinerUModel(),
+			pdfCfg.GetMinerULang(),
+			pdfCfg.MinerUOcr,
+			pdfCfg.GetMinerUFormula(),
+			pdfCfg.GetMinerUTable(),
+			proxyURL,
+		)
+		if pdfCfg.MinerUToken != "" {
+			log.Infof("MinerU 增强已启用 (精准解析 API, model=%s)", pdfCfg.GetMinerUModel())
+		} else {
+			log.Info("MinerU 增强已启用 (Agent 轻量 API, 无 Token)")
+		}
+	}
+
+	return f, nil
 }
 
 // Fetch 抓取网页或解析 PDF（自动检测 file:// 路径）。
 func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (*Result, error) {
-	// 本地 PDF 文件：使用 ParsePDFFile
+	// 本地 PDF 文件
 	if strings.HasPrefix(rawURL, "file://") {
 		localPath := strings.TrimPrefix(rawURL, "file://")
 		// 处理 Windows 三斜杠格式 file:///C:/...
 		if len(localPath) > 0 && localPath[0] == '/' && len(localPath) > 2 && localPath[2] == ':' {
-			localPath = localPath[1:] // 去掉前导 /
+			localPath = localPath[1:]
 		}
 		localPath = strings.ReplaceAll(localPath, "/", string(os.PathSeparator))
+
+		// 优先尝试 MinerU Agent API（本地文件签名上传）
+		if f.mineru != nil {
+			md, err := f.mineru.ParseFile(ctx, localPath)
+			if err == nil {
+				return &Result{
+					Title:    filepath.Base(localPath),
+					Mode:     "inline",
+					Markdown: md,
+				}, nil
+			}
+			if errors.Is(err, mineru.ErrFileTooLarge) {
+				log.Infof("文件超过 MinerU Agent API 限制(10MB)，使用本地解析: %s", localPath)
+			} else {
+				log.Infof("MinerU 解析失败，回退本地解析: %v", err)
+			}
+		}
+
 		return f.parsePDFFile(ctx, localPath)
+	}
+
+	// 远程 URL：有 Token 时优先尝试 MinerU 精准 API
+	if f.mineru != nil && f.mineru.HasToken() {
+		md, err := f.mineru.ParseURL(ctx, rawURL)
+		if err == nil {
+			return &Result{
+				Mode:     "inline",
+				Markdown: md,
+			}, nil
+		}
+		log.Infof("MinerU 精准 API 解析失败(%v)，回退到 webfetch", err)
 	}
 
 	res, err := f.engine.Fetch(ctx, rawURL)

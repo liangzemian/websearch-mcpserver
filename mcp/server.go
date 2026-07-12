@@ -65,9 +65,13 @@ func RegisterRouter(mux *http.ServeMux, conf config.Config) {
 
 	// ── 注册 pdf_parser 工具（默认关闭） ──
 	if conf.PDFParser.Enabled && webfetchInst != nil {
+		pdfDesc := "本地 PDF 解析工具，将 PDF 文件转换为 Markdown。大文档自动存储到临时文件。"
+		if conf.PDFParser.MinerUEnabled() {
+			pdfDesc += "已启用 MinerU AI 增强解析（表格/公式/多栏识别）。"
+		}
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "pdf_parser",
-			Description: "本地 PDF 解析工具，将 PDF 文件转换为 Markdown。大文档自动存储到临时文件。",
+			Description: pdfDesc,
 		}, PDFParserHandler)
 		log.Info("Available tool: pdf_parser")
 	}

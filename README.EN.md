@@ -22,6 +22,7 @@ An MCP search service built in Go with built-in Baidu web search, Bing, and 6 ac
 - **Score-based result filtering** — per-engine minimum relevance score thresholds and max result count truncation; engines without score support skip filtering automatically; merged results sorted by score or distributed round-robin
 - **Smart fallback** — Baidu SK failure falls back to web search; primary engine failure falls back to Bing; LLM summary failure falls back to raw results; cleanfetch failure falls back to Jina Reader; cache errors are silently skipped
 - **Enhanced web fetching** — based on go-webfetch, no proxy needed; built-in SSRF protection and WAF detection; large content auto-stored to temp files
+- **MinerU AI-enhanced PDF parsing** — optional MinerU integration for intelligent table/formula/multi-column/image recognition; with Token uses Standard API (≤200MB), without Token auto-degrades to Agent Lightweight API (≤10MB), silently falls back to local parsing on failure
 - **Reference-counted process management** — multiple clients share one instance; auto-exits when count reaches zero
 - **Sub-agent extension** — optional companion [web-researcher](https://github.com/daidaiJ/web-researcher) extension offloads web research to a fast model sub-agent, zero context bloat for the main model (see [Qwen Code Sub-Agent Extension](#qwen-code-sub-agent-extension-web-researcher))
 - **Pure Go, no CGO** — SQLite via `modernc.org/sqlite`, single-binary deployment
@@ -238,13 +239,19 @@ Results include engine source and relevance score by default (for engines that s
 
 Requires `cleanfetch.enabled: true`. Based on go-webfetch, no proxy needed; falls back to Jina Reader on failure (requires `jina.api_key`, proxy auto-detected).
 
-### `pdf_parser` — Local PDF Parsing
+### `pdf_parser` — PDF Parsing
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `path` | string | ✅ | Local PDF file path |
+| `path` | string | ✅ | Local PDF file path or remote URL |
 
 Requires `pdf_parser.enabled: true`. Large documents auto-stored to temp files.
+
+**MinerU AI Enhancement** (optional): configure `mineru_token` to enable MinerU parsing with intelligent table/formula/multi-column/image recognition.
+- With Token: Standard API, supports remote URLs (≤200MB/200 pages)
+- Without Token: Agent Lightweight API, local file signed upload (≤10MB/20 pages)
+- Get Token: https://mineru.net/apiManage
+- Environment variable: `MINERU_TOKEN`
 
 > Tool registration conditions: `smartsearch` needs `bing.enabled=true`; `academicsearch` needs `academic.enabled=true`; `cleanfetch` needs `cleanfetch.enabled=true`; `pdf_parser` needs `pdf_parser.enabled=true`.
 

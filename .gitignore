@@ -26,6 +26,7 @@ vendor/
 # Project specific
 /test/
 /config.yaml
+/config.test.yaml
 /websearch-mcpserver
 /websearch
 /autostart.vbs
