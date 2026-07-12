@@ -23,6 +23,7 @@ An MCP search service built in Go with built-in Baidu web search, Bing, and 6 ac
 - **Smart fallback** — Baidu SK failure falls back to web search; primary engine failure falls back to Bing; LLM summary failure falls back to raw results; cleanfetch failure falls back to Jina Reader; cache errors are silently skipped
 - **Enhanced web fetching** — based on go-webfetch, no proxy needed; built-in SSRF protection and WAF detection; large content auto-stored to temp files
 - **Reference-counted process management** — multiple clients share one instance; auto-exits when count reaches zero
+- **Sub-agent extension** — optional companion [web-researcher](https://github.com/daidaiJ/web-researcher) extension offloads web research to a fast model sub-agent, zero context bloat for the main model (see [Qwen Code Sub-Agent Extension](#qwen-code-sub-agent-extension-web-researcher))
 - **Pure Go, no CGO** — SQLite via `modernc.org/sqlite`, single-binary deployment
 
 ## Feature Overview
@@ -376,6 +377,55 @@ launchctl list | grep websearch
 - Medicine/Biology → `pubmed`; CS/AI → `arxiv` + `semantic_scholar`; All fields → `crossref` + `openalex`
 - Keep `network: china` for domestic access; overseas engines auto-skipped
 - Semantic Scholar / Google Scholar disabled by default; set `disable_semantic_scholar: false` / `disable_google_scholar: false` to enable; proxy auto-detected
+
+## Qwen Code Sub-Agent Extension: web-researcher
+
+[web-researcher](https://github.com/daidaiJ/web-researcher) is a companion Qwen Code extension for websearch-mcpserver that offloads web research tasks from the main agent to a dedicated sub-agent, **keeping the main model's context window clean**.
+
+### Why
+
+The main model's context window in Qwen Code is precious. Directing the main agent to do web research — searching, fetching pages, filtering information — floods the context with raw content, squeezing out space for coding conversations.
+
+web-researcher solves this: a dedicated fast model sub-agent (default `deepseek-v4-flash`) independently handles the full pipeline of search → filter → fetch → synthesize, generates a structured report saved locally, and returns only a concise summary to the main agent.
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| 🔍 **Research Offloading** | `/research:search <query>` dispatches a research task; the sub-agent automatically decomposes queries, searches in parallel, filters, fetches, and generates a report |
+| 📊 **Report Management** | `/research:reports` lists historical reports · `/research:read <keyword>` search and read reports by keyword |
+| 📐 **Structured Reports** | Reports use `FINDING-*`, `DATA-*`, `CONFLICT-*` anchors; the main agent greps for specific sections on demand without loading the full report |
+
+### Installation
+
+In Qwen Code:
+
+```bash
+/extension-creator ~/.qwen/extensions/web-researcher
+```
+
+Then place the [web-researcher](https://github.com/daidaiJ/web-researcher) contents into that directory.
+
+Or clone manually:
+
+```bash
+git clone https://github.com/daidaiJ/web-researcher.git ~/.qwen/extensions/web-researcher
+```
+
+### Usage
+
+```
+# One-click research
+/research:search MCP protocol specification 2025
+
+# Browse historical reports
+/research:reports MCP
+
+# Deep-dive on demand
+/research:read MCP protocol
+```
+
+Reports are stored in `.qwen/research/` under the project directory and can be referenced across sessions.
 
 ## Embed as Go Module
 

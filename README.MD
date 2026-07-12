@@ -23,6 +23,7 @@
 - **智能回退** — 百度 SK 失败自动回退网页搜索；主引擎失败自动回退 Bing；LLM 摘要失败回退原始结果；cleanfetch 失败回退 Jina Reader；缓存异常跳过缓存
 - **增强型网页抓取** — 基于 go-webfetch，无需代理即可抓取网页，内置 SSRF 防护和 WAF 检测，大内容自动存储到临时文件
 - **引用计数进程管理** — 多客户端共享同一实例，归零自动优雅退出
+- **子智能体扩展** — 可选配套 [web-researcher](https://github.com/daidaiJ/web-researcher) 扩展，将网络调研卸载到 fast model 子智能体，主模型上下文零膨胀（详见 [Qwen Code 子智能体扩展](#qwen-code-子智能体扩展web-researcher)）
 - **纯 Go 无 CGO** — SQLite 使用 `modernc.org/sqlite`，单二进制部署
 
 ## 特性一览
@@ -376,6 +377,55 @@ launchctl list | grep websearch
 - 医学/生物 → `pubmed`；CS/AI → `arxiv` + `semantic_scholar`；全学科 → `crossref` + `openalex`
 - 国内保持 `network: china`，海外引擎自动跳过
 - Semantic Scholar / Google Scholar 默认禁用，设置 `disable_semantic_scholar: false` / `disable_google_scholar: false` 即可启用，代理自动检测
+
+## Qwen Code 子智能体扩展：web-researcher
+
+[web-researcher](https://github.com/daidaiJ/web-researcher) 是 websearch-mcpserver 的配套 Qwen Code 扩展，将网络调研任务从主智能体卸载到专用子智能体，**保持主模型上下文窗口干净**。
+
+### 为什么需要
+
+Qwen Code 主模型的上下文窗口非常宝贵。直接让主智能体做网络调研——搜索、抓取网页、筛选信息——大量原始内容会涌入上下文，挤占后续编码对话的空间。
+
+web-researcher 的解法：用一个专用的 fast model 子智能体（默认 `deepseek-v4-flash`）独立完成搜索→筛选→抓取→综合的全流程，生成结构化报告存到本地，只把精炼的摘要返回给主智能体。
+
+### 主要功能
+
+| 功能 | 说明 |
+|------|------|
+| 🔍 **网络调研卸载** | `/research:search <query>` 一键派发调研任务，子智能体自动拆解子问题、并行搜索、筛选抓取、生成报告 |
+| 📊 **报告管理与回溯** | `/research:reports` 列出历史报告 · `/research:read <keyword>` 按关键词检索，分层读取 |
+| 📐 **结构化报告** | 报告采用 `FINDING-*`、`DATA-*`、`CONFLICT-*` 锚点标记，主智能体按需 grep 定位，无需加载整份报告 |
+
+### 安装
+
+在 Qwen Code 中执行：
+
+```bash
+/extension-creator ~/.qwen/extensions/web-researcher
+```
+
+然后将 [web-researcher](https://github.com/daidaiJ/web-researcher) 的内容放入该目录。
+
+或手动克隆：
+
+```bash
+git clone https://github.com/daidaiJ/web-researcher.git ~/.qwen/extensions/web-researcher
+```
+
+### 使用示例
+
+```
+# 一键调研
+/research:search MCP protocol specification 2025
+
+# 查看历史报告
+/research:reports MCP
+
+# 按需深入阅读
+/research:read MCP protocol
+```
+
+调研结果存放在项目下 `.qwen/research/` 目录，支持跨会话回溯引用。
 
 ## 作为 Go 模块嵌入
 
