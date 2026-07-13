@@ -31,7 +31,7 @@ An MCP search service built in Go with built-in Baidu web search, Bing, DuckDuck
 
 | Category | Capabilities |
 |----------|-------------|
-| **General Search** | Baidu Qianfan, Baidu Web Search (built-in), Tavily, Bing (built-in), DuckDuckGo (auto-detects proxy), Google (disabled by default, needs explicit enable) |
+| **General Search** | Baidu Qianfan, Baidu Web Search (built-in), Tavily, Exa, Bing (built-in), DuckDuckGo (auto-detects proxy), Google (disabled by default, needs explicit enable) |
 | **Academic Search** | arXiv, Crossref, OpenAlex, PubMed (direct from China) + Semantic Scholar, Google Scholar (auto-detects proxy) |
 | **MCP Tools** | `smartsearch` web search · `academicsearch` paper search · `cleanfetch` web fetch · `pdf_parser` PDF parsing |
 | **Caching** | SQLite auto-cache, 6h expiry, background cleanup |
@@ -39,6 +39,7 @@ An MCP search service built in Go with built-in Baidu web search, Bing, DuckDuck
 | **Site Blocking** | Global `black_list_host`, auto-filters low-quality sites |
 | **Global Rate Limit** | `rate_limit` unified config for all search engines |
 | **Score Filtering** | per-engine `min_score` / `max_size`, global `max_size`, `show_meta` controls source and score display |
+| **Time Range** | `smartsearch` tool supports `time_range` parameter (in months); API engines unified time range filtering |
 | **SearXNG Compatible** | `/searxng/search` endpoint, works with LiteLLM |
 
 ## Quick Start
@@ -169,7 +170,8 @@ Windows auto-start (optional): run `websearch-mcpserver.exe install` after downl
 |------|-------------|--------------|
 | `baidu` | Baidu Qianfan SK (falls back to Baidu web search on failure); uses Baidu web search directly when no SK | `BAIDU_SK` (optional) |
 | `tavily` | Tavily Search API | `TAVILY_SK` |
-| `hybrid` | Baidu SK + Baidu web search + Tavily + Bing + DuckDuckGo concurrent dedup | Both (optional) |
+| `exa` | Exa Web Search API | `EXA_API_KEY` |
+| `hybrid` | Baidu SK + Baidu web search + Tavily + Exa + Bing + DuckDuckGo concurrent dedup | All optional |
 | **`engine`** | **Baidu web search + Bing** (DuckDuckGo auto-joins when proxy available) | **None** |
 
 > All modes auto-fallback on primary engine failure. Auto-degrades to `engine` mode when keys are missing. `baidu` mode uses Baidu web search (tn=json, no API key) when no SK is configured.
@@ -211,6 +213,7 @@ smartsearch:
 |-----------|------|----------|-------------|
 | `query` | string | ✅ | Search keyword |
 | `intent` | string | ❌ | Search intent (only effective when LLM is enabled) |
+| `time_range` | int | ❌ | Search time range in months, default 3. `1`=last month, `6`=last 6 months, `12`=last year, `0`=unlimited |
 
 Results include engine source and relevance score by default (for engines that support scores like Tavily). Disable via `smartsearch.show_meta: false`.
 
@@ -219,6 +222,7 @@ Results include engine source and relevance score by default (for engines that s
 | Config Name | Engine | Returns Score |
 |-------------|--------|--------------|
 | `tavily_api` | Tavily Search API | ✅ |
+| `exa` | Exa Web Search API | ❌ |
 | `baidu_api` | Baidu Qianfan AI Search API | ❌ |
 | `baidu` | Baidu Web Search (built-in) | ❌ |
 | `bing` | Bing (built-in) | ❌ |

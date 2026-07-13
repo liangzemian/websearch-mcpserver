@@ -12,6 +12,7 @@ type BaiduSearchImpl struct {
 	authHeader string
 	sk         string
 	blacklist  []string
+	recency    string // 搜索时间范围: "day", "week", "month", "semiyear", "year"
 }
 type baiduSearchMsg struct {
 	Content string `json:"content"`
@@ -50,6 +51,7 @@ func NewBaiduSeach(sk string, blacklist []string) *BaiduSearchImpl {
 		authHeader: "X-Appbuilder-Authorization",
 		sk:         sk,
 		blacklist:  blacklist,
+		recency:    "semiyear",
 	}
 }
 
@@ -62,6 +64,34 @@ func (b *BaiduSearchImpl) Search(query string) (string, error) {
 	}
 	return b.MergeContent(query, results)
 
+}
+
+// SearchRawWithTimeRange 实现 SearchTimeRanger 接口，支持动态时间范围。
+func (b *BaiduSearchImpl) SearchRawWithTimeRange(query string, lookbackDays int) ([]SearchResult, error) {
+	recency := b.recency
+	if lookbackDays > 0 {
+		recency = lookbackDaysToRecency(lookbackDays)
+	}
+	saved := b.recency
+	b.recency = recency
+	defer func() { b.recency = saved }()
+	return b.SearchRaw(query)
+}
+
+// lookbackDaysToRecency 将天数转换为百度 API 的 recency 值。
+func lookbackDaysToRecency(days int) string {
+	switch {
+	case days <= 1:
+		return "day"
+	case days <= 7:
+		return "week"
+	case days <= 30:
+		return "month"
+	case days <= 180:
+		return "semiyear"
+	default:
+		return "year"
+	}
 }
 
 //	curl --location 'https://qianfan.baidubce.com/v2/ai_search/web_search' \
@@ -81,8 +111,12 @@ func (b *BaiduSearchImpl) Search(query string) (string, error) {
 //	}'
 
 func (b *BaiduSearchImpl) SearchRaw(query string) ([]SearchResult, error) {
-	req := baiduSearchReq{Message: []baiduSearchMsg{{Content: query, Role: "user"}}, TypeFliter: []baiduSearchTypeFliter{{Type: "web", TopK: 5}}, BlackSites: b.blacklist,
-		Recency: "semiyear"}
+	req := baiduSearchReq{
+		Message:    []baiduSearchMsg{{Content: query, Role: "user"}},
+		TypeFliter: []baiduSearchTypeFliter{{Type: "web", TopK: 5}},
+		BlackSites: b.blacklist,
+		Recency:    b.recency,
+	}
 	rep := baidSearchReponse{}
 	res, err := client.DefaultClient.R().SetHeader(b.authHeader, fmt.Sprintf("Bearer %s", b.sk)).SetBody(req).SetResult(&rep).Post(b.hostUlr)
 	if err != nil {

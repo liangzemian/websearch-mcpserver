@@ -17,6 +17,7 @@ var configDir string
 const (
 	ModeBaidu  = "baidu"
 	ModeTavily = "tavily"
+	ModeExa    = "exa"
 	ModeHybrid = "hybrid"
 	ModeEngine = "engine" // 纯引擎模式，无需 API Key
 )
@@ -32,6 +33,7 @@ type Config struct {
 	RateLimit     RateLimitConfig  `mapstructure:"rate_limit"`      // 全局限流配置
 	Baidu         BaiduConfig      `mapstructure:"baidu"`
 	Tavily        TavilyConfig     `mapstructure:"tavily"`
+	Exa           ExaConfig        `mapstructure:"exa"`
 	LLM           LLMConfig        `mapstructure:"llm"`
 	Jina          JinaConfig       `mapstructure:"jina"`
 	Cache         CacheConfig      `mapstructure:"cache"`
@@ -54,6 +56,12 @@ type BaiduConfig struct {
 
 type TavilyConfig struct {
 	APIKey string `mapstructure:"api_key"` // Tavily Search API Key
+}
+
+type ExaConfig struct {
+	APIKey       string `mapstructure:"api_key"`       // Exa Search API Key
+	NumResults   int    `mapstructure:"num_results"`   // 单次搜索结果数量（默认 5）
+	LookbackDays int    `mapstructure:"lookback_days"` // 搜索时间范围（天），默认 90
 }
 
 type BingConfig struct {
@@ -290,6 +298,8 @@ func (c Config) GetMode() string {
 	switch strings.ToLower(c.Mode) {
 	case ModeTavily:
 		return ModeTavily
+	case ModeExa:
+		return ModeExa
 	case ModeHybrid, "hybird":
 		return ModeHybrid
 	case ModeEngine:
@@ -361,6 +371,7 @@ func Load(configPath string) (*Config, error) {
 	viper.AutomaticEnv()
 	viper.BindEnv("baidu.api_key", "BAIDU_SK")
 	viper.BindEnv("tavily.api_key", "TAVILY_SK")
+	viper.BindEnv("exa.api_key", "EXA_API_KEY")
 	viper.BindEnv("llm.base_url", "LLM_BASE_URL")
 	viper.BindEnv("llm.api_key", "LLM_API_KEY")
 	viper.BindEnv("pdf_parser.mineru_token", "MINERU_TOKEN")

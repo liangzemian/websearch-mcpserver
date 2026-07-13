@@ -16,7 +16,7 @@
 ```yaml
 port: 8338                  # MCP HTTP 端口
 log_level: info             # debug / info / warn / error
-mode: engine                # baidu / tavily / hybrid / engine
+mode: engine                # baidu / tavily / exa / hybrid / engine
 network: china              # china（跳过海外引擎） / international
 
 # 屏蔽站点（对所有搜索引擎生效）
@@ -31,6 +31,12 @@ baidu:
 # Tavily（mode=tavily 或 hybrid 时需要）
 tavily:
   api_key: ""               # 环境变量: TAVILY_SK
+
+# Exa（mode=exa 或 hybrid 时需要）
+exa:
+  api_key: ""               # 环境变量: EXA_API_KEY
+  num_results: 5            # 单次搜索结果数量（默认 5）
+  lookback_days: 90         # 搜索时间范围（天），默认 90
 
 # Bing 引擎（兜底 + engine 模式主力，无需 Key）
 bing:
@@ -105,6 +111,7 @@ log:
 | `WEBSEARCH_CONFIG` | 配置文件路径 | 最高优先级 |
 | `BAIDU_SK` | `baidu.api_key` | |
 | `TAVILY_SK` | `tavily.api_key` | |
+| `EXA_API_KEY` | `exa.api_key` | Exa Web Search API Key |
 | `LLM_BASE_URL` | `llm.base_url` | |
 | `LLM_API_KEY` | `llm.api_key` | |
 | `MINERU_TOKEN` | `pdf_parser.mineru_token` | MinerU 精准解析 API Token |

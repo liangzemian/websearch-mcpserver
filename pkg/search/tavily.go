@@ -7,9 +7,11 @@ import (
 	md "websearch/pkg/xml"
 )
 
+// TavilySearchImpl 实现 SearchInf 接口，通过 Tavily Search API 搜索。
 type TavilySearchImpl struct {
 	name           string
 	apiKey         string
+	timeRange      string   // "day", "week", "month", "year"，空表示不限
 	includeDomains []string
 	excludeDomains []string
 }
@@ -17,6 +19,9 @@ type TavilySearchImpl struct {
 type tavilySearchReq struct {
 	Query          string   `json:"query"`
 	SearchDepth    string   `json:"search_depth"`
+	TimeRange      string   `json:"time_range,omitempty"`
+	StartDate      string   `json:"start_date,omitempty"`
+	EndDate        string   `json:"end_date,omitempty"`
 	IncludeDomains []string `json:"include_domains,omitempty"`
 	ExcludeDomains []string `json:"exclude_domains,omitempty"`
 }
@@ -60,6 +65,31 @@ func (t *TavilySearchImpl) Search(query string) (string, error) {
 	return t.MergeContent(query, results)
 }
 
+// SearchRawWithTimeRange 实现 SearchTimeRanger 接口，支持动态时间范围。
+func (t *TavilySearchImpl) SearchRawWithTimeRange(query string, lookbackDays int) ([]SearchResult, error) {
+	timeRange := lookbackDaysToTavilyRange(lookbackDays)
+	saved := t.timeRange
+	t.timeRange = timeRange
+	defer func() { t.timeRange = saved }()
+	return t.SearchRaw(query)
+}
+
+// lookbackDaysToTavilyRange 将天数转换为 Tavily API 的 time_range 值。
+func lookbackDaysToTavilyRange(days int) string {
+	switch {
+	case days <= 0:
+		return ""
+	case days <= 1:
+		return "day"
+	case days <= 7:
+		return "week"
+	case days <= 30:
+		return "month"
+	default:
+		return "year"
+	}
+}
+
 // curl -X POST https://api.tavily.com/search \
 // -H 'Content-Type: application/json' \
 // -H 'Authorization: Bearer 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' \
@@ -72,6 +102,7 @@ func (t *TavilySearchImpl) SearchRaw(query string) ([]SearchResult, error) {
 	req := tavilySearchReq{
 		Query:          query,
 		SearchDepth:    "basic",
+		TimeRange:      t.timeRange,
 		IncludeDomains: t.includeDomains,
 		ExcludeDomains: t.excludeDomains,
 	}

@@ -31,7 +31,7 @@
 
 | 类别 | 能力 |
 |------|------|
-| **通用搜索** | 百度千帆、百度网页搜索（内置）、Tavily、Bing（内置）、DuckDuckGo（自动检测代理）、Google（默认禁用，需显式启用） |
+| **通用搜索** | 百度千帆、百度网页搜索（内置）、Tavily、Exa、Bing（内置）、DuckDuckGo（自动检测代理）、Google（默认禁用，需显式启用） |
 | **学术搜索** | arXiv、Crossref、OpenAlex、PubMed（国内直连）+ Semantic Scholar、Google Scholar（自动检测代理） |
 | **MCP 工具** | `smartsearch` 网络检索 · `academicsearch` 论文检索 · `cleanfetch` 网页抓取 · `pdf_parser` PDF 解析 |
 | **缓存** | SQLite 自动缓存，6h 过期，后台定时清理 |
@@ -39,6 +39,7 @@
 | **站点屏蔽** | 全局 `black_list_host`，自动过滤低质量站点 |
 | **全局限流** | `rate_limit` 统一配置所有搜索引擎的请求速率 |
 | **Score 过滤** | per-engine `min_score` / `max_size`，全局 `max_size`，`show_meta` 控制来源和分数展示 |
+| **时间范围** | `smartsearch` 工具支持 `time_range` 参数（月为单位），API 引擎统一支持时间范围过滤 |
 | **SearXNG 兼容** | `/searxng/search` 端点，可对接 LiteLLM |
 
 ## 快速开始
@@ -169,7 +170,8 @@ Windows 自启动（可选）：下载后执行 `websearch-mcpserver.exe install
 |------|------|----------|
 | `baidu` | 百度千帆 SK（失败自动回退百度网页搜索）；无 SK 时直接用百度网页搜索 | `BAIDU_SK`（可选） |
 | `tavily` | Tavily Search API | `TAVILY_SK` |
-| `hybrid` | 百度 SK + 百度网页搜索 + Tavily + Bing + DuckDuckGo 并发去重 | 两者（可选） |
+| `exa` | Exa Web Search API | `EXA_API_KEY` |
+| `hybrid` | 百度 SK + 百度网页搜索 + Tavily + Exa + Bing + DuckDuckGo 并发去重 | 各 Key 可选 |
 | **`engine`** | **百度网页搜索 + Bing**（代理可用时自动加入 DuckDuckGo） | **无需** |
 
 > 所有模式下主引擎失败均自动回退。无 Key 时自动降级为 `engine`。`baidu` 模式无 SK 时使用百度网页搜索（tn=json，无需 API Key）。
@@ -211,6 +213,7 @@ smartsearch:
 |------|------|------|------|
 | `query` | string | ✅ | 搜索关键词 |
 | `intent` | string | ❌ | 搜索意图（仅 LLM 启用时生效） |
+| `time_range` | int | ❌ | 搜索时间范围（月），默认 3。`1`=近 1 个月，`6`=近半年，`12`=近一年，`0`=不限 |
 
 返回结果默认附带来源引擎和相关性分数（Tavily 等支持 score 的引擎）。可通过 `smartsearch.show_meta: false` 关闭。
 
@@ -219,6 +222,7 @@ smartsearch:
 | 配置名 | 引擎 | 回传 score |
 |--------|------|-----------|
 | `tavily_api` | Tavily Search API | ✅ |
+| `exa` | Exa Web Search API | ❌ |
 | `baidu_api` | 百度千帆 AI Search API | ❌ |
 | `baidu` | 百度网页搜索（内置） | ❌ |
 | `bing` | Bing（内置） | ❌ |

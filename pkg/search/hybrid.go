@@ -17,10 +17,17 @@ type engineFilter struct {
 
 // HybridSearchImpl 多引擎并发搜索，支持按 score 过滤和 per-engine maxsize 截断。
 type HybridSearchImpl struct {
-	engines    []SearchInf
-	engineMap  map[string]engineFilter // 按引擎名配置的过滤规则
-	maxSize    int                     // 全局最大结果数（按 score 排序后截断），0 = 不限
-	engineNames []string               // 与 engines 一一对应的引擎名
+	engines     []SearchInf
+	engineMap   map[string]engineFilter // 按引擎名配置的过滤规则
+	maxSize     int                     // 全局最大结果数（按 score 排序后截断），0 = 不限
+	engineNames []string                // 与 engines 一一对应的引擎名
+}
+
+// indexedResult 并发搜索时单个引擎的结果。
+type indexedResult struct {
+	index   int
+	results []SearchResult
+	err     error
 }
 
 func NewHybridSearch(engines ...SearchInf) *HybridSearchImpl {
@@ -51,13 +58,32 @@ func (h *HybridSearchImpl) Search(query string) (string, error) {
 	return h.MergeContent(query, results)
 }
 
-func (h *HybridSearchImpl) SearchRaw(query string) ([]SearchResult, error) {
-	type indexedResult struct {
-		index   int
-		results []SearchResult
-		err     error
+// SearchRawWithTimeRange 实现 SearchTimeRanger 接口，将时间范围传递给支持的子引擎。
+func (h *HybridSearchImpl) SearchRawWithTimeRange(query string, lookbackDays int) ([]SearchResult, error) {
+	var wg sync.WaitGroup
+	ch := make(chan indexedResult, len(h.engines))
+
+	for i, engine := range h.engines {
+		wg.Add(1)
+		go func(idx int, e SearchInf) {
+			defer wg.Done()
+			var results []SearchResult
+			var err error
+			if timeRanger, ok := e.(SearchTimeRanger); ok {
+				results, err = timeRanger.SearchRawWithTimeRange(query, lookbackDays)
+			} else {
+				results, err = e.SearchRaw(query)
+			}
+			ch <- indexedResult{index: idx, results: results, err: err}
+		}(i, engine)
 	}
 
+	wg.Wait()
+	close(ch)
+	return h.mergeResults(ch)
+}
+
+func (h *HybridSearchImpl) SearchRaw(query string) ([]SearchResult, error) {
 	var wg sync.WaitGroup
 	ch := make(chan indexedResult, len(h.engines))
 
@@ -72,7 +98,11 @@ func (h *HybridSearchImpl) SearchRaw(query string) ([]SearchResult, error) {
 
 	wg.Wait()
 	close(ch)
+	return h.mergeResults(ch)
+}
 
+// mergeResults 合并多引擎搜索结果，去重、过滤、截断。
+func (h *HybridSearchImpl) mergeResults(ch <-chan indexedResult) ([]SearchResult, error) {
 	seen := make(map[string]struct{})
 	var merged []SearchResult
 

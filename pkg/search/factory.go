@@ -78,6 +78,26 @@ func NewFromConfig(conf config.Config) (*SearchGroup, error) {
 			g.Primary = NewTavilySearch(conf.Tavily.APIKey, conf.BlackListHost)
 		}
 
+	case config.ModeExa:
+		if conf.Exa.APIKey == "" {
+			log.Error("mode=exa 但未配置 exa.api_key，回退到 engine 模式")
+			if g.Fallback != nil {
+				g.Primary = g.Fallback
+			} else {
+				return nil, fmt.Errorf("无可用搜索引擎")
+			}
+		} else {
+			numResults := conf.Exa.NumResults
+			if numResults <= 0 {
+				numResults = 5
+			}
+			lookbackDays := conf.Exa.LookbackDays
+			if lookbackDays <= 0 {
+				lookbackDays = 90
+			}
+			g.Primary = NewExaSearchWithResults(conf.Exa.APIKey, numResults, lookbackDays, conf.BlackListHost)
+		}
+
 	case config.ModeHybrid:
 		var engines []SearchInf
 		if conf.Baidu.APIKey != "" {
@@ -88,6 +108,17 @@ func NewFromConfig(conf config.Config) (*SearchGroup, error) {
 		}
 		if conf.Tavily.APIKey != "" {
 			engines = append(engines, NewTavilySearch(conf.Tavily.APIKey, conf.BlackListHost))
+		}
+		if conf.Exa.APIKey != "" {
+			numResults := conf.Exa.NumResults
+			if numResults <= 0 {
+				numResults = 5
+			}
+			lookbackDays := conf.Exa.LookbackDays
+			if lookbackDays <= 0 {
+				lookbackDays = 90
+			}
+			engines = append(engines, NewExaSearchWithResults(conf.Exa.APIKey, numResults, lookbackDays, conf.BlackListHost))
 		}
 		// Bing 作为原生引擎参与混合搜索
 		if g.Fallback != nil {

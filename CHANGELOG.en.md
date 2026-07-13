@@ -2,6 +2,26 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v2.11.0 — 2026-07-13
+
+### Added
+- **Exa Web Search API engine**: new Exa general search with `type: auto` automatic type selection, `highlights` summary extraction, and `excludeDomains` domain filtering
+  - `mode=exa` for standalone Exa; `mode=hybrid` auto-includes Exa in mixed search
+  - Config: `exa.api_key` (env `EXA_API_KEY`), `exa.num_results` (default 5), `exa.lookback_days` (default 90)
+- **API engine time range config**: all API engines (Tavily, Baidu Qianfan, Exa) now support the unified `SearchTimeRanger` interface for time-filtered search results
+  - Tavily: maps to `time_range` parameter (day/week/month/year)
+  - Baidu Qianfan: maps to `search_recency_filter` parameter (day/week/month/semiyear/year)
+  - Exa: maps to `startPublishedDate` / `endPublishedDate` date range
+- **smartsearch tool time_range parameter**: new `time_range` parameter (in months) for dynamic search time range control, defaults to 3 months
+  - Example: `time_range=1` for last month, `time_range=6` for last 6 months, `time_range=12` for last year
+- New `SearchTimeRanger` optional interface; engines with time range support implement it automatically
+- New `HybridSearchImpl.SearchRawWithTimeRange`, passes time range through to supporting sub-engines
+- New Exa, Tavily, Baidu Qianfan integration tests (API keys stored in `config.test.yaml`, gitignored)
+
+### Changed
+- `config.example.yaml` mode comment now includes `exa` mode description
+- Baidu Qianfan `search_recency_filter` changed from hardcoded `semiyear` to configurable, default unchanged
+
 ## v2.10.0 — 2026-07-12
 
 ### Added

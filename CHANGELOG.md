@@ -2,6 +2,26 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v2.11.0 — 2026-07-13
+
+### 新增
+- **Exa Web Search API 引擎**：新增 Exa 通用搜索，支持 `type: auto` 自动选择搜索类型、`highlights` 高亮摘要、`excludeDomains` 排除域名
+  - `mode=exa` 独立使用 Exa；`mode=hybrid` 时自动参与混合搜索
+  - 配置项：`exa.api_key`（环境变量 `EXA_API_KEY`）、`exa.num_results`（默认 5）、`exa.lookback_days`（默认 90）
+- **API 引擎时间范围配置**：所有 API 引擎（Tavily、百度千帆、Exa）统一支持 `SearchTimeRanger` 接口，可按时间范围过滤搜索结果
+  - Tavily：映射为 `time_range` 参数（day/week/month/year）
+  - 百度千帆：映射为 `search_recency_filter` 参数（day/week/month/semiyear/year）
+  - Exa：映射为 `startPublishedDate` / `endPublishedDate` 日期范围
+- **smartsearch 工具 time_range 参数**：新增 `time_range` 参数（月为单位），支持动态控制搜索时间范围，默认 3 个月
+  - 示例：`time_range=1` 搜索近 1 个月，`time_range=6` 搜索近半年，`time_range=12` 搜索近一年
+- 新增 `SearchTimeRanger` 可选接口，支持时间范围的引擎自动实现
+- 新增 `HybridSearchImpl.SearchRawWithTimeRange`，将时间范围透传给支持的子引擎
+- 新增 Exa、Tavily、百度千帆集成测试（API Key 存储在 `config.test.yaml`，已 gitignore）
+
+### 变更
+- `config.example.yaml` 搜索模式注释新增 `exa` 模式说明
+- 百度千帆 `search_recency_filter` 从硬编码 `semiyear` 改为可配置，默认值不变
+
 ## v2.10.0 — 2026-07-12
 
 ### 新增

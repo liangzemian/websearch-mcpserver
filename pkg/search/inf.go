@@ -35,6 +35,12 @@ type SearchInf interface {
 	MergeContent(query string, results []SearchResult) (string, error)
 }
 
+// SearchTimeRanger 支持按时间范围搜索的引擎可实现此可选接口。
+// lookbackDays 控制搜索最近多少天的结果，0 表示使用引擎默认值。
+type SearchTimeRanger interface {
+	SearchRawWithTimeRange(query string, lookbackDays int) ([]SearchResult, error)
+}
+
 // AcademicSearchOptions 学术搜索可选参数。
 type AcademicSearchOptions struct {
 	Page      int      // 页码（默认 1）
