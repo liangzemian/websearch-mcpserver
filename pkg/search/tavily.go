@@ -10,7 +10,7 @@ import (
 // TavilySearchImpl 实现 SearchInf 接口，通过 Tavily Search API 搜索。
 type TavilySearchImpl struct {
 	name           string
-	apiKey         string
+	keys           *KeyPool
 	timeRange      string   // "day", "week", "month", "year"，空表示不限
 	includeDomains []string
 	excludeDomains []string
@@ -37,19 +37,20 @@ type tavilySearchResp struct {
 	Results []tavilyResult `json:"results"`
 }
 
-func NewTavilySearch(apiKey string, excludeDomains []string) *TavilySearchImpl {
+// NewTavilySearch 创建 Tavily 搜索实例，支持 KeyPool 轮询。
+func NewTavilySearch(keys *KeyPool, excludeDomains []string) *TavilySearchImpl {
 	return &TavilySearchImpl{
 		name:           "tavily_api",
-		apiKey:         apiKey,
+		keys:           keys,
 		excludeDomains: excludeDomains,
 	}
 }
 
 // NewTavilySearchWithDomains 创建支持限定域名的 Tavily 搜索实例。
-func NewTavilySearchWithDomains(apiKey string, includeDomains, excludeDomains []string) *TavilySearchImpl {
+func NewTavilySearchWithDomains(keys *KeyPool, includeDomains, excludeDomains []string) *TavilySearchImpl {
 	return &TavilySearchImpl{
 		name:           "tavily_api",
-		apiKey:         apiKey,
+		keys:           keys,
 		includeDomains: includeDomains,
 		excludeDomains: excludeDomains,
 	}
@@ -90,14 +91,6 @@ func lookbackDaysToTavilyRange(days int) string {
 	}
 }
 
-// curl -X POST https://api.tavily.com/search \
-// -H 'Content-Type: application/json' \
-// -H 'Authorization: Bearer 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' \
-// -d '{
-//     "query": "",
-//     "search_depth": "advanced"
-// }'
-
 func (t *TavilySearchImpl) SearchRaw(query string) ([]SearchResult, error) {
 	req := tavilySearchReq{
 		Query:          query,
@@ -108,7 +101,7 @@ func (t *TavilySearchImpl) SearchRaw(query string) ([]SearchResult, error) {
 	}
 	var resp tavilySearchResp
 	res, err := client.DefaultClient.R().
-		SetHeader("Authorization", fmt.Sprintf("Bearer %s", t.apiKey)).
+		SetHeader("Authorization", fmt.Sprintf("Bearer %s", t.keys.Next())).
 		SetHeader("Content-Type", "application/json").
 		SetBody(req).
 		SetResult(&resp).

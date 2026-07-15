@@ -2,6 +2,28 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v2.12.0 — 2026-07-15
+
+### 新增
+- **`apipool` 搜索模式**：新增 API Key 池轮转模式，百度智能搜索 + Tavily + Exa 并发去重
+  - 负载策略：先选供应商（round-robin），再轮转该供应商的 SK（KeyPool）
+  - 百度网页搜索作为无 Key 兜底引擎自动参与
+  - 配置项：`mode: apipool`
+- **百度智能搜索端点**：新增 `chat/completions` 智能搜索 API（`baidu_ai.go`），返回 LLM 生成的回答 + 参考来源
+  - `baidu.enable_ai_search` 控制端点选择（默认 `true` = 智能搜索，`false` = 旧版网页搜索）
+  - 支持 `model`（默认 `ernie-4.5-turbo-32k`）、`search_source`（默认 `baidu_search_v2`）、`enable_reasoning`、`enable_deep_search`、`search_mode` 等配置
+- **API Key 多 Key 轮询（KeyPool）**：`baidu`/`tavily`/`exa` 三个供应商均支持 `sk_list` 多 Key 轮询
+  - `sk_list` 非空时优先使用，为空时自动用 `api_key` 构造单元素列表
+  - KeyPool 线程安全，round-robin 轮转
+  - 支持 Key 失效标记（`MarkInvalid`），失效 30 分钟后自动恢复
+  - 所有 Key 均失效时自动降级为最早恢复的 Key
+
+### 变更
+- `baidu` 模式默认使用智能搜索端点（`enable_ai_search: true`），可通过配置切回旧版 `web_search`
+- `hybrid` 模式百度引擎也使用 `enable_ai_search` 配置控制端点选择
+- `NewBaiduSeach`、`NewTavilySearch`、`NewExaSearch`/`NewExaSearchWithResults` 构造函数改为接收 `*KeyPool` 参数
+- `lookbackDaysToRecency(0)` 修复为返回 `semiyear`（默认值）而非 `day`
+
 ## v2.11.0 — 2026-07-13
 
 ### 新增

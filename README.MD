@@ -16,6 +16,8 @@
 ## 设计亮点
 
 - **零依赖启动** — `engine` 模式无需任何 API Key，内置百度网页搜索 + Bing 双引擎并发，代理可用时自动加入 DuckDuckGo
+- **API Key 多 Key 轮询** — `baidu`/`tavily`/`exa` 均支持 `sk_list` 多 Key round-robin 轮转，Key 失效 30 分钟自动恢复
+- **百度智能搜索** — `baidu` 模式默认使用千帆 `chat/completions` 智能搜索端点，`enable_ai_search` 可切换回旧版 `web_search`
 - **系统代理自动检测** — 默认读取 Windows 注册表 / 环境变量，Clash 等代理软件开启系统代理后 DuckDuckGo、学术引擎、Jina Reader 自动走代理，无需手动配置
 - **智能限流重试** — 所有 HTTP 客户端自动处理 429 限流（读取 `Retry-After` 头等待后重试），arXiv 引擎内置 1 req/s 限流器避免触发限流
 - **多引擎并行编排** — 学术搜索并发请求多个引擎，结果按 URL 去重 + 分组归一化排序；hybrid 模式下多引擎原生混合
@@ -168,13 +170,14 @@ Windows 自启动（可选）：下载后执行 `websearch-mcpserver.exe install
 
 | 模式 | 说明 | 需要 Key |
 |------|------|----------|
-| `baidu` | 百度千帆 SK（失败自动回退百度网页搜索）；无 SK 时直接用百度网页搜索 | `BAIDU_SK`（可选） |
+| `baidu` | 百度千帆搜索（`enable_ai_search` 控制端点），失败自动回退百度网页搜索；无 SK 时直接用百度网页搜索 | `BAIDU_SK`（可选） |
+| **`apipool`** | **API Key 池轮转：百度 + Tavily + Exa 并发去重，先选供应商再轮转 SK** | 各 Key 可选 |
 | `tavily` | Tavily Search API | `TAVILY_SK` |
 | `exa` | Exa Web Search API | `EXA_API_KEY` |
-| `hybrid` | 百度 SK + 百度网页搜索 + Tavily + Exa + Bing + DuckDuckGo 并发去重 | 各 Key 可选 |
+| `hybrid` | 全引擎混合（百度智能搜索 + 百度网页搜索 + Tavily + Exa + Bing + DuckDuckGo） | 各 Key 可选 |
 | **`engine`** | **百度网页搜索 + Bing**（代理可用时自动加入 DuckDuckGo） | **无需** |
 
-> 所有模式下主引擎失败均自动回退。无 Key 时自动降级为 `engine`。`baidu` 模式无 SK 时使用百度网页搜索（tn=json，无需 API Key）。
+> 所有模式下主引擎失败均自动回退。无 Key 时自动降级为 `engine`。`baidu`/`tavily`/`exa` 均支持 `sk_list` 多 Key 轮询，`sk_list` 为空时自动用 `api_key` 作为单元素列表。
 
 ### SmartSearch 高级配置
 
@@ -223,7 +226,8 @@ smartsearch:
 |--------|------|-----------|
 | `tavily_api` | Tavily Search API | ✅ |
 | `exa` | Exa Web Search API | ❌ |
-| `baidu_api` | 百度千帆 AI Search API | ❌ |
+| `baidu_api` | 百度千帆 web_search API | ❌ |
+| `baidu_ai` | 百度千帆智能搜索（chat/completions） | ❌ |
 | `baidu` | 百度网页搜索（内置） | ❌ |
 | `bing` | Bing（内置） | ❌ |
 | `google` | Google（默认禁用，被反爬拦截） | ❌ |

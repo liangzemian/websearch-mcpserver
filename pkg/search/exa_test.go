@@ -10,12 +10,13 @@ import (
 // ── 单元测试（不需要网络和 API Key） ──
 
 func TestNewExaSearch(t *testing.T) {
-	exa := NewExaSearch("test-key", []string{"spam.com"})
+	pool := mustNewKeyPool("test-key")
+	exa := NewExaSearch(pool, []string{"spam.com"})
 	if exa.Name() != "exa" {
 		t.Errorf("expected name 'exa', got %s", exa.Name())
 	}
-	if exa.apiKey != "test-key" {
-		t.Errorf("expected apiKey 'test-key', got %s", exa.apiKey)
+	if exa.keys != pool {
+		t.Error("expected keys to match pool")
 	}
 	if exa.numResults != 5 {
 		t.Errorf("expected numResults 5, got %d", exa.numResults)
@@ -29,6 +30,7 @@ func TestNewExaSearch(t *testing.T) {
 }
 
 func TestNewExaSearchWithResults(t *testing.T) {
+	pool := mustNewKeyPool("key")
 	tests := []struct {
 		name         string
 		numResults   int
@@ -42,7 +44,7 @@ func TestNewExaSearchWithResults(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			exa := NewExaSearchWithResults("key", tt.numResults, tt.lookbackDays, nil)
+			exa := NewExaSearchWithResults(pool, tt.numResults, tt.lookbackDays, nil)
 			if exa.numResults != tt.wantNum {
 				t.Errorf("numResults: got %d, want %d", exa.numResults, tt.wantNum)
 			}
@@ -54,7 +56,8 @@ func TestNewExaSearchWithResults(t *testing.T) {
 }
 
 func TestExaSearchImpl_MergeContent(t *testing.T) {
-	exa := NewExaSearch("key", nil)
+	pool := mustNewKeyPool("key")
+	exa := NewExaSearch(pool, nil)
 	results := []SearchResult{
 		{Title: "Result 1", Url: "https://example.com/1", Content: "Content 1", Engine: "exa"},
 		{Title: "Result 2", Url: "https://example.com/2", Content: "Content 2", Engine: "exa"},
@@ -91,11 +94,21 @@ func TestExaSearchImpl_MergeContent(t *testing.T) {
 }
 
 func TestExaSearchImpl_MergeContent_Empty(t *testing.T) {
-	exa := NewExaSearch("key", nil)
+	pool := mustNewKeyPool("key")
+	exa := NewExaSearch(pool, nil)
 	_, err := exa.MergeContent("test", nil)
 	if err == nil {
 		t.Error("expected error for empty results")
 	}
+}
+
+// mustNewKeyPool 测试辅助：创建单 key KeyPool，失败时 panic。
+func mustNewKeyPool(key string) *KeyPool {
+	pool, err := NewKeyPool([]string{key})
+	if err != nil {
+		panic(err)
+	}
+	return pool
 }
 
 // ── 集成测试（从 config.test.yaml 加载 API Key） ──
@@ -106,7 +119,7 @@ func TestExaSearchImpl_SearchRaw_Integration(t *testing.T) {
 	}
 	apiKey := loadExaAPIKey(t)
 
-	exa := NewExaSearchWithResults(apiKey, 3, 30, []string{"csdn.net"})
+	exa := NewExaSearchWithResults(newTestKeyPool(t, apiKey), 3, 30, []string{"csdn.net"})
 	results, err := exa.SearchRaw("Go programming language")
 	if err != nil {
 		t.Fatalf("SearchRaw failed: %v", err)
@@ -134,7 +147,7 @@ func TestExaSearchImpl_Search_Integration(t *testing.T) {
 	}
 	apiKey := loadExaAPIKey(t)
 
-	exa := NewExaSearch(apiKey, nil)
+	exa := NewExaSearch(newTestKeyPool(t, apiKey), nil)
 	output, err := exa.Search("latest AI news")
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
@@ -151,7 +164,7 @@ func TestExaSearchImpl_SearchRawWithTimeRange_Integration(t *testing.T) {
 	}
 	apiKey := loadExaAPIKey(t)
 
-	exa := NewExaSearchWithResults(apiKey, 3, 90, nil)
+	exa := NewExaSearchWithResults(newTestKeyPool(t, apiKey), 3, 90, nil)
 
 	// 测试动态时间范围（7天）
 	results, err := exa.SearchRawWithTimeRange("AI news", 7)

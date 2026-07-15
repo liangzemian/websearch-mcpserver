@@ -10,7 +10,7 @@ type BaiduSearchImpl struct {
 	name       string
 	hostUlr    string
 	authHeader string
-	sk         string
+	keys       *KeyPool
 	blacklist  []string
 	recency    string // 搜索时间范围: "day", "week", "month", "semiyear", "year"
 }
@@ -44,12 +44,13 @@ type baidSearchReponse struct {
 	References []referenceCtx `json:"references"`
 }
 
-func NewBaiduSeach(sk string, blacklist []string) *BaiduSearchImpl {
+// NewBaiduSeach 创建百度搜索实例，支持 KeyPool 轮询。
+func NewBaiduSeach(keys *KeyPool, blacklist []string) *BaiduSearchImpl {
 	return &BaiduSearchImpl{
 		name:       "baidu_api",
 		hostUlr:    "https://qianfan.baidubce.com/v2/ai_search/web_search",
 		authHeader: "X-Appbuilder-Authorization",
-		sk:         sk,
+		keys:       keys,
 		blacklist:  blacklist,
 		recency:    "semiyear",
 	}
@@ -81,6 +82,8 @@ func (b *BaiduSearchImpl) SearchRawWithTimeRange(query string, lookbackDays int)
 // lookbackDaysToRecency 将天数转换为百度 API 的 recency 值。
 func lookbackDaysToRecency(days int) string {
 	switch {
+	case days <= 0:
+		return "semiyear" // 默认
 	case days <= 1:
 		return "day"
 	case days <= 7:
@@ -94,22 +97,6 @@ func lookbackDaysToRecency(days int) string {
 	}
 }
 
-//	curl --location 'https://qianfan.baidubce.com/v2/ai_search/web_search' \
-//
-// --header 'X-Appbuilder-Authorization: Bearer <AppBuilder API Key>' \
-// --header 'Content-Type: application/json' \
-//
-//	--data '{
-//	  "messages": [
-//	    {
-//	      "content": "百度千帆平台",
-//	      "role": "user"
-//	    }
-//	  ],
-//	  "search_source": "baidu_search_v2",
-//	  "resource_type_filter": [{"type": "web","top_k": 10}]
-//	}'
-
 func (b *BaiduSearchImpl) SearchRaw(query string) ([]SearchResult, error) {
 	req := baiduSearchReq{
 		Message:    []baiduSearchMsg{{Content: query, Role: "user"}},
@@ -118,7 +105,7 @@ func (b *BaiduSearchImpl) SearchRaw(query string) ([]SearchResult, error) {
 		Recency:    b.recency,
 	}
 	rep := baidSearchReponse{}
-	res, err := client.DefaultClient.R().SetHeader(b.authHeader, fmt.Sprintf("Bearer %s", b.sk)).SetBody(req).SetResult(&rep).Post(b.hostUlr)
+	res, err := client.DefaultClient.R().SetHeader(b.authHeader, fmt.Sprintf("Bearer %s", b.keys.Next())).SetBody(req).SetResult(&rep).Post(b.hostUlr)
 	if err != nil {
 		if rep.Message != "" {
 			return nil, fmt.Errorf("百度搜索api 调用失败，%s", rep.Message)

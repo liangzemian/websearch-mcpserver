@@ -15,11 +15,12 @@ import (
 var configDir string
 
 const (
-	ModeBaidu  = "baidu"
-	ModeTavily = "tavily"
-	ModeExa    = "exa"
-	ModeHybrid = "hybrid"
-	ModeEngine = "engine" // 纯引擎模式，无需 API Key
+	ModeBaidu   = "baidu"   // 百度千帆搜索（enable_ai_search 控制端点，失败自动回退网页搜索）
+	ModeApipool = "apipool" // API Key 池轮转：百度 + Tavily + Exa 并发去重
+	ModeTavily  = "tavily"
+	ModeExa     = "exa"
+	ModeHybrid  = "hybrid"
+	ModeEngine  = "engine" // 纯引擎模式，无需 API Key
 )
 
 // ── 顶层配置 ──
@@ -51,17 +52,60 @@ type Config struct {
 // ── 各搜索引擎配置 ──
 
 type BaiduConfig struct {
-	APIKey string `mapstructure:"api_key"` // 百度千帆 AI Search API Key
+	APIKey string   `mapstructure:"api_key"` // 百度千帆 AI Search API Key（单 key 时自动作为 sk_list）
+	SKList []string `mapstructure:"sk_list"` // 多 Key 轮询列表（优先级高于 api_key）
+	// 搜索模式配置
+	EnableAISearch   bool   `mapstructure:"enable_ai_search"`   // true=智能搜索 chat/completions，false=网页搜索 web_search（默认 true）
+	Model            string `mapstructure:"model"`               // 智能搜索模型名，默认 ernie-4.5-turbo-32k
+	SearchSource     string `mapstructure:"search_source"`       // 搜索引擎版本，默认 baidu_search_v2
+	EnableReasoning  bool   `mapstructure:"enable_reasoning"`    // 深度思考（默认 false）
+	EnableDeepSearch bool   `mapstructure:"enable_deep_search"`  // 深搜索（默认 false）
+	SearchMode       string `mapstructure:"search_mode"`         // 搜索模式: auto/required/disabled（默认 auto）
+}
+
+// EffectiveSKList 返回合并后的 Key 列表：sk_list 非空时直接返回，否则用 api_key 构造单元素列表。
+func (c BaiduConfig) EffectiveSKList() []string {
+	if len(c.SKList) > 0 {
+		return c.SKList
+	}
+	if c.APIKey != "" {
+		return []string{c.APIKey}
+	}
+	return nil
 }
 
 type TavilyConfig struct {
-	APIKey string `mapstructure:"api_key"` // Tavily Search API Key
+	APIKey string   `mapstructure:"api_key"` // Tavily Search API Key（单 key 时自动作为 sk_list）
+	SKList []string `mapstructure:"sk_list"` // 多 Key 轮询列表（优先级高于 api_key）
+}
+
+// EffectiveSKList 返回合并后的 Key 列表。
+func (c TavilyConfig) EffectiveSKList() []string {
+	if len(c.SKList) > 0 {
+		return c.SKList
+	}
+	if c.APIKey != "" {
+		return []string{c.APIKey}
+	}
+	return nil
 }
 
 type ExaConfig struct {
-	APIKey       string `mapstructure:"api_key"`       // Exa Search API Key
-	NumResults   int    `mapstructure:"num_results"`   // 单次搜索结果数量（默认 5）
-	LookbackDays int    `mapstructure:"lookback_days"` // 搜索时间范围（天），默认 90
+	APIKey       string   `mapstructure:"api_key"`       // Exa Search API Key（单 key 时自动作为 sk_list）
+	SKList       []string `mapstructure:"sk_list"`       // 多 Key 轮询列表（优先级高于 api_key）
+	NumResults   int      `mapstructure:"num_results"`   // 单次搜索结果数量（默认 5）
+	LookbackDays int      `mapstructure:"lookback_days"` // 搜索时间范围（天），默认 90
+}
+
+// EffectiveSKList 返回合并后的 Key 列表。
+func (c ExaConfig) EffectiveSKList() []string {
+	if len(c.SKList) > 0 {
+		return c.SKList
+	}
+	if c.APIKey != "" {
+		return []string{c.APIKey}
+	}
+	return nil
 }
 
 type BingConfig struct {
@@ -296,6 +340,8 @@ func (c Config) GetCleanupInterval() time.Duration {
 
 func (c Config) GetMode() string {
 	switch strings.ToLower(c.Mode) {
+	case ModeApipool:
+		return ModeApipool
 	case ModeTavily:
 		return ModeTavily
 	case ModeExa:
@@ -426,6 +472,11 @@ func Load(configPath string) (*Config, error) {
 	// 代理：标记用户显式禁用（enabled: false），跳过自动检测
 	if viper.IsSet("proxy.enabled") && !viper.GetBool("proxy.enabled") {
 		conf.Proxy.autoDisabled = true
+	}
+
+	// 百度 enable_ai_search 默认 true（智能搜索优先）
+	if !viper.IsSet("baidu.enable_ai_search") {
+		conf.Baidu.EnableAISearch = true
 	}
 
 	// SmartSearch 默认值

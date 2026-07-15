@@ -16,7 +16,7 @@ Priority (high to low):
 ```yaml
 port: 8338                  # MCP HTTP port
 log_level: info             # debug / info / warn / error
-mode: engine                # baidu / tavily / hybrid / engine
+mode: engine                # baidu / apipool / tavily / exa / hybrid / engine
 network: china              # china (skip overseas engines) / international
 
 # Blocked sites (applies to all search engines)
@@ -24,13 +24,28 @@ black_list_host:
   - "csdn.net"
   - "baidu.com"
 
-# Baidu Qianfan (required for mode=baidu or hybrid)
+# Baidu Qianfan (required for mode=baidu/apipool/hybrid)
 baidu:
-  api_key: ""               # Env: BAIDU_SK
+  api_key: ""               # Env: BAIDU_SK (falls back to single-element sk_list when empty)
+  sk_list: []               # Multi-key rotation list (priority over api_key)
+  enable_ai_search: true    # true=AI search chat/completions (default), false=web search web_search
+  model: "ernie-4.5-turbo-32k"     # AI search model
+  search_source: "baidu_search_v2" # Search engine version
+  enable_reasoning: false   # Deep reasoning
+  enable_deep_search: false # Deep search
+  search_mode: "auto"       # auto / required / disabled
 
-# Tavily (required for mode=tavily or hybrid)
+# Tavily (required for mode=tavily/apipool/hybrid)
 tavily:
-  api_key: ""               # Env: TAVILY_SK
+  api_key: ""               # Env: TAVILY_SK (falls back to single-element sk_list when empty)
+  sk_list: []               # Multi-key rotation list (priority over api_key)
+
+# Exa (required for mode=exa/apipool/hybrid)
+exa:
+  api_key: ""               # Env: EXA_API_KEY (falls back to single-element sk_list when empty)
+  sk_list: []               # Multi-key rotation list (priority over api_key)
+  num_results: 5            # Results per search (default 5)
+  lookback_days: 90         # Search time range (days), default 90
 
 # Bing engine (fallback + engine mode primary, no key needed)
 bing:
@@ -116,7 +131,8 @@ log:
 | Field | Default | Notes |
 |-------|---------|-------|
 | `port` | 8338 | stop/kill/status also use this port when no config |
-| `mode` | baidu | Auto-degrades to engine when no keys |
+| `mode` | baidu | Auto-degrades to engine when no keys; `apipool` = API Key pool rotation mode |
+| `baidu.enable_ai_search` | true | true=AI search chat/completions, false=web search web_search |
 | `network` | china | |
 | `bing.enabled` | true | |
 | `bing.per_sec` | 1 | |

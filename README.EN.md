@@ -16,6 +16,8 @@ An MCP search service built in Go with built-in Baidu web search, Bing, DuckDuck
 ## Design Highlights
 
 - **Zero-config startup** — `engine` mode requires no API keys; built-in Baidu web search + Bing dual-engine concurrent search, DuckDuckGo auto-joins when a proxy is available
+- **API Key multi-key rotation** — `baidu`/`tavily`/`exa` all support `sk_list` multi-key round-robin rotation; invalid keys auto-recover after 30 minutes
+- **Baidu AI Search** — `baidu` mode defaults to Qianfan `chat/completions` intelligent search endpoint; `enable_ai_search` toggles back to legacy `web_search`
 - **System proxy auto-detection** — reads Windows registry / environment variables by default; Clash and similar proxy software enable DuckDuckGo, academic engines, Jina Reader automatically without manual configuration
 - **Smart rate-limit retry** — all HTTP clients handle 429 responses automatically (reads `Retry-After` header); arXiv engine has a built-in 1 req/s limiter
 - **Multi-engine parallel orchestration** — academic search fires requests to multiple engines concurrently with URL dedup + normalized grouping; hybrid mode mixes native engines
@@ -168,13 +170,14 @@ Windows auto-start (optional): run `websearch-mcpserver.exe install` after downl
 
 | Mode | Description | Key Required |
 |------|-------------|--------------|
-| `baidu` | Baidu Qianfan SK (falls back to Baidu web search on failure); uses Baidu web search directly when no SK | `BAIDU_SK` (optional) |
+| `baidu` | Baidu Qianfan search (`enable_ai_search` controls endpoint), falls back to Baidu web search on failure; uses Baidu web search directly when no SK | `BAIDU_SK` (optional) |
+| **`apipool`** | **API Key pool rotation: Baidu + Tavily + Exa concurrent dedup, provider selected first then SK rotated** | All optional |
 | `tavily` | Tavily Search API | `TAVILY_SK` |
 | `exa` | Exa Web Search API | `EXA_API_KEY` |
-| `hybrid` | Baidu SK + Baidu web search + Tavily + Exa + Bing + DuckDuckGo concurrent dedup | All optional |
+| `hybrid` | Full mixed (Baidu AI + Baidu web + Tavily + Exa + Bing + DuckDuckGo) | All optional |
 | **`engine`** | **Baidu web search + Bing** (DuckDuckGo auto-joins when proxy available) | **None** |
 
-> All modes auto-fallback on primary engine failure. Auto-degrades to `engine` mode when keys are missing. `baidu` mode uses Baidu web search (tn=json, no API key) when no SK is configured.
+> All modes auto-fallback on primary engine failure. Auto-degrades to `engine` mode when keys are missing. `baidu`/`tavily`/`exa` all support `sk_list` multi-key rotation; `sk_list` falls back to `api_key` as single-element list when empty.
 
 ### SmartSearch Advanced Config
 
@@ -223,7 +226,8 @@ Results include engine source and relevance score by default (for engines that s
 |-------------|--------|--------------|
 | `tavily_api` | Tavily Search API | ✅ |
 | `exa` | Exa Web Search API | ❌ |
-| `baidu_api` | Baidu Qianfan AI Search API | ❌ |
+| `baidu_api` | Baidu Qianfan web_search API | ❌ |
+| `baidu_ai` | Baidu Qianfan AI Search (chat/completions) | ❌ |
 | `baidu` | Baidu Web Search (built-in) | ❌ |
 | `bing` | Bing (built-in) | ❌ |
 | `google` | Google (disabled by default, anti-bot blocked) | ❌ |

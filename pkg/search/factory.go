@@ -1,7 +1,6 @@
 package search
 
 import (
-	"fmt"
 	"websearch/pkg/antirobot"
 	"websearch/pkg/baidu"
 	"websearch/pkg/bing"
@@ -38,123 +37,32 @@ func NewFromConfig(conf config.Config) (*SearchGroup, error) {
 	// ── 初始化 DuckDuckGo 引擎（需代理，由 resolver 动态解析） ──
 	ddgAdapter := initDuckDuckGoEngine(conf)
 
+	// ── 构建 KeyPool ──
+	baiduPool := newKeyPoolFromList(conf.Baidu.EffectiveSKList(), "baidu")
+	tavilyPool := newKeyPoolFromList(conf.Tavily.EffectiveSKList(), "tavily")
+	exaPool := newKeyPoolFromList(conf.Exa.EffectiveSKList(), "exa")
+
 	// ── 按模式选择主引擎 ──
 	switch conf.GetMode() {
 	case config.ModeEngine:
-		var engines []SearchInf
-		if baiduWebAdapter != nil {
-			engines = append(engines, baiduWebAdapter)
-		}
-		if g.Fallback != nil {
-			engines = append(engines, g.Fallback)
-		}
-		if googleAdapter != nil {
-			engines = append(engines, googleAdapter)
-		}
-		if ddgAdapter != nil {
-			engines = append(engines, ddgAdapter)
-		}
-		if len(engines) == 0 {
-			return nil, fmt.Errorf("engine 模式需要至少一个引擎，请检查 bing 配置")
-		}
-		if len(engines) == 1 {
-			g.Primary = engines[0]
-		} else {
-			hs := NewHybridSearch(engines...)
-			applySmartSearchFilters(hs, conf)
-			g.Primary = hs
-		}
-		log.Infof("搜索模式: engine（无需 API Key，%d 个引擎并发）", len(engines))
+		g.Primary = buildEngineMode(g, baiduWebAdapter, googleAdapter, ddgAdapter)
+		log.Infof("搜索模式: engine（无需 API Key）")
 
 	case config.ModeTavily:
-		if conf.Tavily.APIKey == "" {
-			log.Error("mode=tavily 但未配置 tavily.api_key，回退到 engine 模式")
-			if g.Fallback != nil {
-				g.Primary = g.Fallback
-			} else {
-				return nil, fmt.Errorf("无可用搜索引擎")
-			}
-		} else {
-			g.Primary = NewTavilySearch(conf.Tavily.APIKey, conf.BlackListHost)
-		}
+		g.Primary = buildTavilyMode(tavilyPool, g, conf)
 
 	case config.ModeExa:
-		if conf.Exa.APIKey == "" {
-			log.Error("mode=exa 但未配置 exa.api_key，回退到 engine 模式")
-			if g.Fallback != nil {
-				g.Primary = g.Fallback
-			} else {
-				return nil, fmt.Errorf("无可用搜索引擎")
-			}
-		} else {
-			numResults := conf.Exa.NumResults
-			if numResults <= 0 {
-				numResults = 5
-			}
-			lookbackDays := conf.Exa.LookbackDays
-			if lookbackDays <= 0 {
-				lookbackDays = 90
-			}
-			g.Primary = NewExaSearchWithResults(conf.Exa.APIKey, numResults, lookbackDays, conf.BlackListHost)
-		}
+		g.Primary = buildExaMode(exaPool, g, conf)
+
+	case config.ModeApipool:
+		g.Primary = buildApipoolMode(baiduPool, tavilyPool, exaPool, baiduWebAdapter, g, conf)
+		log.Infof("搜索模式: apipool（API Key 池轮转）")
 
 	case config.ModeHybrid:
-		var engines []SearchInf
-		if conf.Baidu.APIKey != "" {
-			engines = append(engines, NewBaiduSeach(conf.Baidu.APIKey, conf.BlackListHost))
-		}
-		if baiduWebAdapter != nil {
-			engines = append(engines, baiduWebAdapter)
-		}
-		if conf.Tavily.APIKey != "" {
-			engines = append(engines, NewTavilySearch(conf.Tavily.APIKey, conf.BlackListHost))
-		}
-		if conf.Exa.APIKey != "" {
-			numResults := conf.Exa.NumResults
-			if numResults <= 0 {
-				numResults = 5
-			}
-			lookbackDays := conf.Exa.LookbackDays
-			if lookbackDays <= 0 {
-				lookbackDays = 90
-			}
-			engines = append(engines, NewExaSearchWithResults(conf.Exa.APIKey, numResults, lookbackDays, conf.BlackListHost))
-		}
-		// Bing 作为原生引擎参与混合搜索
-		if g.Fallback != nil {
-			engines = append(engines, g.Fallback)
-		}
-		if googleAdapter != nil {
-			engines = append(engines, googleAdapter)
-		}
-		if ddgAdapter != nil {
-			engines = append(engines, ddgAdapter)
-		}
-		if len(engines) == 0 {
-			return nil, fmt.Errorf("无可用搜索引擎，请检查配置")
-		}
-		hs := NewHybridSearch(engines...)
-		applySmartSearchFilters(hs, conf)
-		g.Primary = hs
+		g.Primary = buildHybridMode(baiduPool, tavilyPool, exaPool, baiduWebAdapter, googleAdapter, ddgAdapter, g, conf)
 
-	default: // baidu
-		if conf.Baidu.APIKey != "" {
-			primary := NewBaiduSeach(conf.Baidu.APIKey, conf.BlackListHost)
-			if baiduWebAdapter != nil {
-				g.Primary = NewBaiduWithFallback(primary, baiduWebAdapter)
-				log.Info("搜索模式: baidu（千帆 SK + 网页搜索回退）")
-			} else {
-				g.Primary = primary
-			}
-		} else if baiduWebAdapter != nil {
-			g.Primary = baiduWebAdapter
-			log.Info("搜索模式: baidu（网页搜索，无需 API Key）")
-		} else if g.Fallback != nil {
-			log.Error("mode=baidu 但未配置 baidu.api_key 且无可用引擎，回退到 Bing")
-			g.Primary = g.Fallback
-		} else {
-			return nil, fmt.Errorf("无可用搜索引擎")
-		}
+	default: // baidu → 百度千帆 web_search
+		g.Primary = buildBaiduMode(baiduPool, baiduWebAdapter, g, conf)
 	}
 
 	log.Infof("搜索模式: %s", conf.GetMode())
@@ -163,6 +71,204 @@ func NewFromConfig(conf config.Config) (*SearchGroup, error) {
 	initAcademicEngine(conf, g)
 
 	return g, nil
+}
+
+// ── 各模式构建函数 ──
+
+// buildEngineMode 纯引擎模式：百度网页 + Bing + Google + DuckDuckGo 并发。
+func buildEngineMode(g *SearchGroup, baiduWeb, google, ddg *EngineSearchAdapter) SearchInf {
+	var engines []SearchInf
+	if baiduWeb != nil {
+		engines = append(engines, baiduWeb)
+	}
+	if g.Fallback != nil {
+		engines = append(engines, g.Fallback)
+	}
+	if google != nil {
+		engines = append(engines, google)
+	}
+	if ddg != nil {
+		engines = append(engines, ddg)
+	}
+	if len(engines) == 0 {
+		log.Error("engine 模式需要至少一个引擎，请检查 bing 配置")
+		return nil
+	}
+	if len(engines) == 1 {
+		return engines[0]
+	}
+	hs := NewHybridSearch(engines...)
+	return hs
+}
+
+// buildBaiduMode 百度千帆搜索（enable_ai_search 控制端点，失败自动回退百度网页搜索）。
+func buildBaiduMode(pool *KeyPool, baiduWeb *EngineSearchAdapter, g *SearchGroup, conf config.Config) SearchInf {
+	if pool != nil {
+		primary := newBaiduSearchFromConf(pool, conf)
+		if baiduWeb != nil {
+			if conf.Baidu.EnableAISearch {
+				log.Info("搜索模式: baidu（智能搜索 + 网页搜索回退）")
+			} else {
+				log.Info("搜索模式: baidu（千帆 SK + 网页搜索回退）")
+			}
+			return NewBaiduWithFallback(primary, baiduWeb)
+		}
+		return primary
+	}
+	if baiduWeb != nil {
+		log.Info("搜索模式: baidu（网页搜索，无需 API Key）")
+		return baiduWeb
+	}
+	if g.Fallback != nil {
+		log.Error("mode=baidu 但未配置 baidu.api_key/sk_list 且无可用引擎，回退到 Bing")
+		return g.Fallback
+	}
+	return nil
+}
+
+// buildTavilyMode Tavily 单引擎模式。
+func buildTavilyMode(pool *KeyPool, g *SearchGroup, conf config.Config) SearchInf {
+	if pool == nil {
+		log.Error("mode=tavily 但未配置 tavily.api_key/sk_list，回退到 engine 模式")
+		if g.Fallback != nil {
+			return g.Fallback
+		}
+		return nil
+	}
+	return NewTavilySearch(pool, conf.BlackListHost)
+}
+
+// buildExaMode Exa 单引擎模式。
+func buildExaMode(pool *KeyPool, g *SearchGroup, conf config.Config) SearchInf {
+	if pool == nil {
+		log.Error("mode=exa 但未配置 exa.api_key/sk_list，回退到 engine 模式")
+		if g.Fallback != nil {
+			return g.Fallback
+		}
+		return nil
+	}
+	numResults := conf.Exa.NumResults
+	if numResults <= 0 {
+		numResults = 5
+	}
+	lookbackDays := conf.Exa.LookbackDays
+	if lookbackDays <= 0 {
+		lookbackDays = 90
+	}
+	return NewExaSearchWithResults(pool, numResults, lookbackDays, conf.BlackListHost)
+}
+
+// buildApipoolMode API Key 池轮转模式：百度搜索 + Tavily + Exa 并发去重。
+// 仅使用 API 引擎（不包含网页抓取引擎），先选供应商再轮转 SK。
+// 百度端点由 baidu.enable_ai_search 配置控制（默认 true=智能搜索）。
+func buildApipoolMode(baiduPool, tavilyPool, exaPool *KeyPool, baiduWeb *EngineSearchAdapter, g *SearchGroup, conf config.Config) SearchInf {
+	var engines []SearchInf
+	// 百度搜索（有 Key 时优先，enable_ai_search 控制端点选择）
+	if baiduPool != nil {
+		engines = append(engines, newBaiduSearchFromConf(baiduPool, conf))
+	}
+	// Tavily
+	if tavilyPool != nil {
+		engines = append(engines, NewTavilySearch(tavilyPool, conf.BlackListHost))
+	}
+	// Exa
+	if exaPool != nil {
+		numResults := conf.Exa.NumResults
+		if numResults <= 0 {
+			numResults = 5
+		}
+		lookbackDays := conf.Exa.LookbackDays
+		if lookbackDays <= 0 {
+			lookbackDays = 90
+		}
+		engines = append(engines, NewExaSearchWithResults(exaPool, numResults, lookbackDays, conf.BlackListHost))
+	}
+	// 百度网页搜索作为兜底（无需 Key）
+	if baiduWeb != nil {
+		engines = append(engines, baiduWeb)
+	}
+	if len(engines) == 0 {
+		log.Error("apipool 模式需要至少配置一个 API Key（baidu/tavily/exa）")
+		return nil
+	}
+	hs := NewHybridSearch(engines...)
+	applySmartSearchFilters(hs, conf)
+	return hs
+}
+
+// buildHybridMode 全引擎混合模式：百度搜索 + 百度网页搜索 + Tavily + Exa + Bing + Google + DuckDuckGo。
+func buildHybridMode(baiduPool, tavilyPool, exaPool *KeyPool, baiduWeb, google, ddg *EngineSearchAdapter, g *SearchGroup, conf config.Config) SearchInf {
+	var engines []SearchInf
+	if baiduPool != nil {
+		engines = append(engines, newBaiduSearchFromConf(baiduPool, conf))
+	}
+	if baiduWeb != nil {
+		engines = append(engines, baiduWeb)
+	}
+	if tavilyPool != nil {
+		engines = append(engines, NewTavilySearch(tavilyPool, conf.BlackListHost))
+	}
+	if exaPool != nil {
+		numResults := conf.Exa.NumResults
+		if numResults <= 0 {
+			numResults = 5
+		}
+		lookbackDays := conf.Exa.LookbackDays
+		if lookbackDays <= 0 {
+			lookbackDays = 90
+		}
+		engines = append(engines, NewExaSearchWithResults(exaPool, numResults, lookbackDays, conf.BlackListHost))
+	}
+	if g.Fallback != nil {
+		engines = append(engines, g.Fallback)
+	}
+	if google != nil {
+		engines = append(engines, google)
+	}
+	if ddg != nil {
+		engines = append(engines, ddg)
+	}
+	if len(engines) == 0 {
+		log.Error("hybrid 模式无可用搜索引擎")
+		return nil
+	}
+	hs := NewHybridSearch(engines...)
+	applySmartSearchFilters(hs, conf)
+	return hs
+}
+
+// ── 辅助函数 ──
+
+// newBaiduSearchFromConf 根据配置创建百度搜索实例（enable_ai_search 控制端点选择）。
+func newBaiduSearchFromConf(pool *KeyPool, conf config.Config) SearchInf {
+	if conf.Baidu.EnableAISearch {
+		return NewBaiduAISearch(
+			pool,
+			conf.BlackListHost,
+			conf.Baidu.Model,
+			conf.Baidu.SearchSource,
+			conf.Baidu.EnableReasoning,
+			conf.Baidu.EnableDeepSearch,
+			conf.Baidu.SearchMode,
+		)
+	}
+	return NewBaiduSeach(pool, conf.BlackListHost)
+}
+
+// newKeyPoolFromList 从 key 列表创建 KeyPool，列表为空时返回 nil。
+func newKeyPoolFromList(keys []string, name string) *KeyPool {
+	if len(keys) == 0 {
+		return nil
+	}
+	pool, err := NewKeyPool(keys)
+	if err != nil {
+		log.Errf("创建 %s KeyPool 失败: %v", name, err)
+		return nil
+	}
+	if pool.Len() > 1 {
+		log.Infof("%s KeyPool: %d 个 Key 轮询", name, pool.Len())
+	}
+	return pool
 }
 
 // initBaiduWebEngine 初始化百度网页搜索引擎。
@@ -180,7 +286,6 @@ func initBaiduWebEngine(conf config.Config) *EngineSearchAdapter {
 }
 
 // initGoogleEngine 初始化 Google 引擎。
-// 默认禁用（被反爬拦截暂不可用），需显式 google.enabled: true 启用。
 func initGoogleEngine(conf config.Config) *EngineSearchAdapter {
 	if !conf.Google.Enabled {
 		log.Info("Google 引擎已禁用（google.enabled=false，被反爬拦截暂不可用）")
@@ -200,8 +305,6 @@ func initGoogleEngine(conf config.Config) *EngineSearchAdapter {
 }
 
 // initDuckDuckGoEngine 初始化 DuckDuckGo 引擎。
-// 需要代理才能访问，代理端点由 resolver 在每次请求时动态解析。
-// 未配置代理时返回 nil。
 func initDuckDuckGoEngine(conf config.Config) *EngineSearchAdapter {
 	if !conf.DuckDuckGo.Enabled {
 		log.Info("DuckDuckGo 引擎已禁用（duckduckgo.enabled=false）")
@@ -243,7 +346,6 @@ func initBingEngine(conf config.Config, g *SearchGroup) {
 }
 
 // initAcademicEngine 根据配置初始化学术搜索引擎。
-// 始终初始化所有未显式禁用的引擎，代理端点由 resolver 在每次请求时动态解析。
 func initAcademicEngine(conf config.Config, g *SearchGroup) {
 	acad := conf.Academic
 	if !acad.Enabled {

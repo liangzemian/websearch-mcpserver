@@ -16,7 +16,7 @@
 ```yaml
 port: 8338                  # MCP HTTP 端口
 log_level: info             # debug / info / warn / error
-mode: engine                # baidu / tavily / exa / hybrid / engine
+mode: engine                # baidu / apipool / tavily / exa / hybrid / engine
 network: china              # china（跳过海外引擎） / international
 
 # 屏蔽站点（对所有搜索引擎生效）
@@ -24,17 +24,26 @@ black_list_host:
   - "csdn.net"
   - "baidu.com"
 
-# 百度千帆（mode=baidu 或 hybrid 时需要）
+# 百度千帆（mode=baidu/apipool/hybrid 时需要）
 baidu:
-  api_key: ""               # 环境变量: BAIDU_SK
+  api_key: ""               # 环境变量: BAIDU_SK（sk_list 为空时自动作为单元素列表）
+  sk_list: []               # 多 Key 轮询列表（优先级高于 api_key）
+  enable_ai_search: true    # true=智能搜索 chat/completions（默认），false=网页搜索 web_search
+  model: "ernie-4.5-turbo-32k"     # 智能搜索模型名
+  search_source: "baidu_search_v2" # 搜索引擎版本
+  enable_reasoning: false   # 深度思考
+  enable_deep_search: false # 深搜索
+  search_mode: "auto"       # auto / required / disabled
 
-# Tavily（mode=tavily 或 hybrid 时需要）
+# Tavily（mode=tavily/apipool/hybrid 时需要）
 tavily:
-  api_key: ""               # 环境变量: TAVILY_SK
+  api_key: ""               # 环境变量: TAVILY_SK（sk_list 为空时自动作为单元素列表）
+  sk_list: []               # 多 Key 轮询列表（优先级高于 api_key）
 
-# Exa（mode=exa 或 hybrid 时需要）
+# Exa（mode=exa/apipool/hybrid 时需要）
 exa:
-  api_key: ""               # 环境变量: EXA_API_KEY
+  api_key: ""               # 环境变量: EXA_API_KEY（sk_list 为空时自动作为单元素列表）
+  sk_list: []               # 多 Key 轮询列表（优先级高于 api_key）
   num_results: 5            # 单次搜索结果数量（默认 5）
   lookback_days: 90         # 搜索时间范围（天），默认 90
 
@@ -123,7 +132,8 @@ log:
 | 字段 | 默认值 | 说明 |
 |------|--------|------|
 | `port` | 8338 | stop/kill/status 无配置时也用此端口 |
-| `mode` | baidu | 无 Key 时自动回退 engine |
+| `mode` | baidu | 无 Key 时自动回退 engine；`apipool` 为 API Key 池轮转模式 |
+| `baidu.enable_ai_search` | true | true=智能搜索 chat/completions，false=网页搜索 web_search |
 | `network` | china | |
 | `bing.enabled` | true | |
 | `bing.per_sec` | 1 | |

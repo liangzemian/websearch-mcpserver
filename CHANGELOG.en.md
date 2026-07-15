@@ -2,6 +2,28 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v2.12.0 — 2026-07-15
+
+### Added
+- **`apipool` search mode**: new API Key pool rotation mode, Baidu AI Search + Tavily + Exa concurrent dedup
+  - Load balancing: provider selected first (round-robin), then SK rotated within that provider (KeyPool)
+  - Baidu web search auto-participates as key-free fallback engine
+  - Config: `mode: apipool`
+- **Baidu AI Search endpoint**: new `chat/completions` intelligent search API (`baidu_ai.go`), returns LLM-generated answers + reference sources
+  - `baidu.enable_ai_search` controls endpoint selection (default `true` = AI search, `false` = legacy web search)
+  - Supports `model` (default `ernie-4.5-turbo-32k`), `search_source` (default `baidu_search_v2`), `enable_reasoning`, `enable_deep_search`, `search_mode` configs
+- **API Key multi-key rotation (KeyPool)**: `baidu`/`tavily`/`exa` all support `sk_list` multi-key rotation
+  - `sk_list` takes priority when non-empty; falls back to `api_key` as single-element list
+  - KeyPool is thread-safe with round-robin rotation
+  - Supports key invalidation (`MarkInvalid`), auto-recovers after 30 minutes
+  - When all keys are invalid, degrades to the earliest-recovering key
+
+### Changed
+- `baidu` mode now uses AI search endpoint by default (`enable_ai_search: true`), configurable to switch back to legacy `web_search`
+- `hybrid` mode Baidu engine also uses `enable_ai_search` config for endpoint selection
+- `NewBaiduSeach`, `NewTavilySearch`, `NewExaSearch`/`NewExaSearchWithResults` constructors changed to accept `*KeyPool` parameter
+- `lookbackDaysToRecency(0)` fixed to return `semiyear` (default) instead of `day`
+
 ## v2.11.0 — 2026-07-13
 
 ### Added

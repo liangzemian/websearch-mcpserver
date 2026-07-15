@@ -12,7 +12,7 @@ func TestBaiduSearchImpl_SearchRaw_Integration(t *testing.T) {
 	}
 	apiKey := loadBaiduAPIKey(t)
 
-	baidu := NewBaiduSeach(apiKey, []string{"csdn.net"})
+	baidu := NewBaiduSeach(newTestKeyPool(t, apiKey), []string{"csdn.net"})
 	results, err := baidu.SearchRaw("Go programming language")
 	if err != nil {
 		t.Fatalf("SearchRaw failed: %v", err)
@@ -40,7 +40,7 @@ func TestBaiduSearchImpl_Search_Integration(t *testing.T) {
 	}
 	apiKey := loadBaiduAPIKey(t)
 
-	baidu := NewBaiduSeach(apiKey, nil)
+	baidu := NewBaiduSeach(newTestKeyPool(t, apiKey), nil)
 	output, err := baidu.Search("latest AI news")
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
@@ -57,7 +57,7 @@ func TestBaiduSearchImpl_SearchRawWithTimeRange_Integration(t *testing.T) {
 	}
 	apiKey := loadBaiduAPIKey(t)
 
-	baidu := NewBaiduSeach(apiKey, nil)
+	baidu := NewBaiduSeach(newTestKeyPool(t, apiKey), nil)
 
 	// 测试时间范围: day
 	results, err := baidu.SearchRawWithTimeRange("AI news", 1)

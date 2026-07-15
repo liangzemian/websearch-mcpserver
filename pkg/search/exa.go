@@ -14,20 +14,20 @@ const exaAPIEndpoint = "https://api.exa.ai/search"
 // ExaSearchImpl 实现 SearchInf 接口，通过 Exa Web Search API 搜索。
 type ExaSearchImpl struct {
 	name           string
-	apiKey         string
+	keys           *KeyPool
 	numResults     int
 	lookbackDays   int      // 搜索时间范围（天），默认 90
 	excludeDomains []string
 }
 
 type exaSearchReq struct {
-	Query             string         `json:"query"`
-	NumResults        int            `json:"numResults,omitempty"`
-	StartPublishedDate string        `json:"startPublishedDate,omitempty"`
-	EndPublishedDate  string         `json:"endPublishedDate,omitempty"`
-	ExcludeDomains    []string       `json:"excludeDomains,omitempty"`
-	Type              string         `json:"type,omitempty"`
-	Contents          exaContents    `json:"contents"`
+	Query              string         `json:"query"`
+	NumResults         int            `json:"numResults,omitempty"`
+	StartPublishedDate string         `json:"startPublishedDate,omitempty"`
+	EndPublishedDate   string         `json:"endPublishedDate,omitempty"`
+	ExcludeDomains     []string       `json:"excludeDomains,omitempty"`
+	Type               string         `json:"type,omitempty"`
+	Contents           exaContents    `json:"contents"`
 }
 
 type exaContents struct {
@@ -46,10 +46,10 @@ type exaSearchResp struct {
 }
 
 // NewExaSearch 创建 Exa 搜索实例，默认搜索最近 90 天。
-func NewExaSearch(apiKey string, excludeDomains []string) *ExaSearchImpl {
+func NewExaSearch(keys *KeyPool, excludeDomains []string) *ExaSearchImpl {
 	return &ExaSearchImpl{
 		name:           "exa",
-		apiKey:         apiKey,
+		keys:           keys,
 		numResults:     5,
 		lookbackDays:   90,
 		excludeDomains: excludeDomains,
@@ -58,7 +58,7 @@ func NewExaSearch(apiKey string, excludeDomains []string) *ExaSearchImpl {
 
 // NewExaSearchWithResults 创建指定配置的 Exa 搜索实例。
 // lookbackDays 控制搜索时间范围（天），<=0 时使用默认 90 天。
-func NewExaSearchWithResults(apiKey string, numResults, lookbackDays int, excludeDomains []string) *ExaSearchImpl {
+func NewExaSearchWithResults(keys *KeyPool, numResults, lookbackDays int, excludeDomains []string) *ExaSearchImpl {
 	if numResults <= 0 {
 		numResults = 5
 	}
@@ -67,7 +67,7 @@ func NewExaSearchWithResults(apiKey string, numResults, lookbackDays int, exclud
 	}
 	return &ExaSearchImpl{
 		name:           "exa",
-		apiKey:         apiKey,
+		keys:           keys,
 		numResults:     numResults,
 		lookbackDays:   lookbackDays,
 		excludeDomains: excludeDomains,
@@ -111,7 +111,7 @@ func (e *ExaSearchImpl) SearchRaw(query string) ([]SearchResult, error) {
 
 	var resp exaSearchResp
 	res, err := client.DefaultClient.R().
-		SetHeader("x-api-key", e.apiKey).
+		SetHeader("x-api-key", e.keys.Next()).
 		SetHeader("Content-Type", "application/json").
 		SetBody(req).
 		SetResult(&resp).

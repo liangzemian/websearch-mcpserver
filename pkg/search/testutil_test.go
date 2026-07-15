@@ -22,6 +22,16 @@ func loadTestConfig(t *testing.T) config.Config {
 	return *conf
 }
 
+// newTestKeyPool 创建单 key 测试用 KeyPool。
+func newTestKeyPool(t *testing.T, key string) *KeyPool {
+	t.Helper()
+	pool, err := NewKeyPool([]string{key})
+	if err != nil {
+		t.Fatalf("创建 KeyPool 失败: %v", err)
+	}
+	return pool
+}
+
 // loadBaiduAPIKey 从测试配置加载百度 API Key。
 func loadBaiduAPIKey(t *testing.T) string {
 	t.Helper()

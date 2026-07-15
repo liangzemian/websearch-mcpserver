@@ -11,11 +11,12 @@ port: 8338
 log_level: info
 
 # 搜索模式:
-#   - baidu   : 百度千帆 SK（失败自动回退百度网页搜索）；无 SK 时直接用百度网页搜索
-#   - tavily  : 仅使用 Tavily Search API
-#   - exa     : 仅使用 Exa Web Search API
-#   - hybrid  : 百度 SK + 百度网页搜索 + Tavily + Exa + Bing + DuckDuckGo 并发去重
-#   - engine  : 百度网页搜索 + Bing + DuckDuckGo（代理启用时加入 DuckDuckGo），无需 API Key
+#   - baidu      : 百度千帆搜索（失败自动回退百度网页搜索），enable_ai_search 控制端点
+#   - apipool    : API Key 池轮转：百度 + Tavily + Exa 并发去重（先选供应商再轮转 SK）
+#   - tavily     : 仅使用 Tavily Search API
+#   - exa        : 仅使用 Exa Web Search API
+#   - hybrid     : 全引擎混合（百度智能搜索 + 百度网页搜索 + Tavily + Exa + Bing + DuckDuckGo）
+#   - engine     : 百度网页搜索 + Bing + DuckDuckGo（代理启用时加入 DuckDuckGo），无需 API Key
 mode: engine
 
 # 网络环境: china（默认，自动跳过海外引擎） / international（启用全部引擎）
@@ -40,12 +41,22 @@ rate_limit:
   per_min: 60  # 每分钟请求数上限（默认 60）
 
 # ==============================================
-# 百度千帆 AI Search API（mode=baidu 或 hybrid 时需要）
+# 百度千帆 AI Search API（mode=baidu/apipool/hybrid 时需要）
 # 获取地址: https://console.bce.baidu.com/iam/#/iam/apikey/list
 # 环境变量: BAIDU_SK
 # ==============================================
 # baidu:
-#   api_key: ""
+#   api_key: ""           # 单 Key（sk_list 为空时自动作为单元素列表）
+#   sk_list:              # 多 Key 轮询列表（优先级高于 api_key）
+#     - "sk-xxxx"
+#     - "sk-yyyy"
+#   # 搜索端点配置
+#   enable_ai_search: true           # true=智能搜索 chat/completions（默认），false=网页搜索 web_search
+#   model: "ernie-4.5-turbo-32k"    # 智能搜索模型名（默认 ernie-4.5-turbo-32k）
+#   search_source: "baidu_search_v2" # 搜索引擎版本（默认 baidu_search_v2）
+#   enable_reasoning: false          # 深度思考（默认 false）
+#   enable_deep_search: false        # 深搜索（默认 false）
+#   search_mode: "auto"              # 搜索模式: auto/required/disabled（默认 auto）
 
 # ==============================================
 # Tavily Search API（mode=tavily 或 hybrid 时需要）
@@ -53,7 +64,10 @@ rate_limit:
 # 环境变量: TAVILY_SK
 # ==============================================
 # tavily:
-#   api_key: ""
+#   api_key: ""           # 单 Key（sk_list 为空时自动作为单元素列表）
+#   sk_list:              # 多 Key 轮询列表（优先级高于 api_key）
+#     - "tvly-xxxx"
+#     - "tvly-yyyy"
 
 # ==============================================
 # Exa Web Search API（mode=exa 或 hybrid 时需要）
@@ -61,7 +75,10 @@ rate_limit:
 # 环境变量: EXA_API_KEY
 # ==============================================
 # exa:
-#   api_key: ""
+#   api_key: ""           # 单 Key（sk_list 为空时自动作为单元素列表）
+#   sk_list:              # 多 Key 轮询列表（优先级高于 api_key）
+#     - "exa-xxxx"
+#     - "exa-yyyy"
 #   num_results: 5        # 单次搜索结果数量（默认 5）
 #   lookback_days: 90     # 搜索时间范围（天），默认 90
 
