@@ -193,7 +193,7 @@ smartsearch:
       max_size: 6      # 单引擎最大结果数（默认 4）
     bing:              # Bing（不回传 score，min_score 无效）
       max_size: 4
-    baidu_api:         # 百度千帆 API（不回传 score）
+    baidu_api:         # 百度千帆搜索（不回传 score，enable_ai_search 控制端点）
       max_size: 5
     baidu:             # 百度网页搜索（不回传 score）
       max_size: 5
@@ -226,8 +226,7 @@ smartsearch:
 |--------|------|-----------|
 | `tavily_api` | Tavily Search API | ✅ |
 | `exa` | Exa Web Search API | ❌ |
-| `baidu_api` | 百度千帆 web_search API | ❌ |
-| `baidu_ai` | 百度千帆智能搜索（chat/completions） | ❌ |
+| `baidu_api` | 百度千帆搜索（`enable_ai_search` 控制端点选择） | ❌ |
 | `baidu` | 百度网页搜索（内置） | ❌ |
 | `bing` | Bing（内置） | ❌ |
 | `google` | Google（默认禁用，被反爬拦截） | ❌ |

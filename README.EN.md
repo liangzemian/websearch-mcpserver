@@ -193,7 +193,7 @@ smartsearch:
       max_size: 6      # Per-engine max results (default 4)
     bing:              # Bing (no score, min_score ignored)
       max_size: 4
-    baidu_api:         # Baidu Qianfan API (no score)
+    baidu_api:         # Baidu Qianfan Search (no score, enable_ai_search controls endpoint)
       max_size: 5
     baidu:             # Baidu web search (no score)
       max_size: 5
@@ -226,8 +226,7 @@ Results include engine source and relevance score by default (for engines that s
 |-------------|--------|--------------|
 | `tavily_api` | Tavily Search API | ✅ |
 | `exa` | Exa Web Search API | ❌ |
-| `baidu_api` | Baidu Qianfan web_search API | ❌ |
-| `baidu_ai` | Baidu Qianfan AI Search (chat/completions) | ❌ |
+| `baidu_api` | Baidu Qianfan Search (`enable_ai_search` controls endpoint) | ❌ |
 | `baidu` | Baidu Web Search (built-in) | ❌ |
 | `bing` | Bing (built-in) | ❌ |
 | `google` | Google (disabled by default, anti-bot blocked) | ❌ |

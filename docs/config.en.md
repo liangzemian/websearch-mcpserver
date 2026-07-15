@@ -107,6 +107,33 @@ pdf_parser:
   # mineru_table: true       # Table recognition (default true)
   # mineru_lang: "ch"        # Document language (default ch)
 
+# Search result filtering and output format (optional)
+# smartsearch:
+#   max_size: 10          # Global max results (truncated by score), 0 = unlimited
+#   show_meta: true       # Show engine source and relevance score in output (default true)
+#   engines:              # Per-engine config (names: tavily_api, exa, baidu_api, baidu, bing, google, duckduckgo)
+#     tavily_api:
+#       min_score: 0.5    # Tavily API minimum relevance score threshold (0 = no filter)
+#       max_size: 6       # Tavily API per-engine max results (default 4)
+#     exa:
+#       min_score: 0      # Exa doesn't return score, this field is ignored
+#       max_size: 4       # Exa per-engine max results
+#     baidu_api:
+#       min_score: 0      # Baidu Qianfan doesn't return score (enable_ai_search controls endpoint)
+#       max_size: 5       # Baidu Qianfan per-engine max results
+#     baidu:
+#       min_score: 0      # Baidu web search doesn't return score
+#       max_size: 5       # Baidu web search per-engine max results
+#     bing:
+#       min_score: 0      # Bing doesn't return score, this field is ignored
+#       max_size: 4       # Bing per-engine max results
+#     google:
+#       min_score: 0      # Google doesn't return score, this field is ignored
+#       max_size: 4       # Google per-engine max results
+#     duckduckgo:
+#       min_score: 0      # DuckDuckGo doesn't return score, this field is ignored
+#       max_size: 4       # DuckDuckGo per-engine max results
+
 # Log rotation
 log:
   max_size: 1               # Max file size (MB)
@@ -120,6 +147,7 @@ log:
 | `WEBSEARCH_CONFIG` | Config file path | Highest priority |
 | `BAIDU_SK` | `baidu.api_key` | |
 | `TAVILY_SK` | `tavily.api_key` | |
+| `EXA_API_KEY` | `exa.api_key` | Exa Web Search API Key |
 | `LLM_BASE_URL` | `llm.base_url` | |
 | `LLM_API_KEY` | `llm.api_key` | |
 | `MINERU_TOKEN` | `pdf_parser.mineru_token` | MinerU Standard API Token |

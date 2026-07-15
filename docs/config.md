@@ -107,6 +107,33 @@ pdf_parser:
   # mineru_table: true       # 表格识别（默认 true）
   # mineru_lang: "ch"        # 文档语言（默认 ch）
 
+# 搜索结果过滤与输出格式（可选）
+# smartsearch:
+#   max_size: 10          # 全局最大结果数（按 score 排序后截断），0 = 不限
+#   show_meta: true       # 输出中显示引擎来源和相关性分数（默认 true）
+#   engines:              # 按引擎名配置（引擎名: tavily_api, exa, baidu_api, baidu, bing, google, duckduckgo）
+#     tavily_api:
+#       min_score: 0.5    # Tavily API 最低相关性分数阈值（0 = 不过滤）
+#       max_size: 6       # Tavily API 单引擎最大结果数（默认 4）
+#     exa:
+#       min_score: 0      # Exa 不回传 score，此字段无效
+#       max_size: 4       # Exa 单引擎最大结果数
+#     baidu_api:
+#       min_score: 0      # 百度千帆搜索不回传 score（enable_ai_search 控制端点）
+#       max_size: 5       # 百度千帆搜索单引擎最大结果数
+#     baidu:
+#       min_score: 0      # 百度网页搜索不回传 score
+#       max_size: 5       # 百度网页搜索单引擎最大结果数
+#     bing:
+#       min_score: 0      # Bing 不回传 score，此字段无效
+#       max_size: 4       # Bing 单引擎最大结果数
+#     google:
+#       min_score: 0      # Google 不回传 score，此字段无效
+#       max_size: 4       # Google 单引擎最大结果数
+#     duckduckgo:
+#       min_score: 0      # DuckDuckGo 不回传 score，此字段无效
+#       max_size: 4       # DuckDuckGo 单引擎最大结果数
+
 # 日志滚动
 log:
   max_size: 1               # 单文件最大 MB
